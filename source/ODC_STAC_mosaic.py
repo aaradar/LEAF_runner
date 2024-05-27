@@ -136,8 +136,7 @@ start_date = datetime(year, month, 1)
 end_date   = start_date + timedelta(days=31)
 timeframe  = start_date.strftime("%Y-%m-%d") + "/" + end_date.strftime("%Y-%m-%d")
 
-# Define a timeframe using a string
-#date_range = "2023-01-10/2023-01-20"
+
 
 
 
@@ -280,24 +279,9 @@ def get_STAC_ImColl(S2A_sensor, Region, ProjStr, Scale, StartStr, EndStr, GroupB
   items = list(search_IC.items())
   print(f"Found: {len(items):d} datasets")
   
-  #first_item = items[0].to_dict()
-  #print(first_item)
-  '''
-  # Spit out data as GeoJSON dictionary  
-  print(search_IC.item_collection_as_dict())
-
-  # loop through each item
-  for item in search_IC.items_as_dicts():
-    print(item)
-    print('\n')
-  '''
   #==================================================================================================
   # define a geobox for my region
   #==================================================================================================
-  #dx = 3/3600  # 90m resolution
-  #epsg = 4326
-  #geobox = GeoBox.from_bbox(ottawa_region, crs=f"epsg:{epsg}", resolution=dx)
-
   # lazily combine items
   mybbox = get_region_bbox(Region)
   print('<get_STAC_ImColl> The bbox of the given region = ', mybbox)
@@ -312,12 +296,6 @@ def get_STAC_ImColl(S2A_sensor, Region, ProjStr, Scale, StartStr, EndStr, GroupB
 
   return ds_xr  
 
-  # actually load it
-  with ProgressBar():
-    ds_xr.load()
-
-  return ds_xr
-
 
 
 
@@ -328,12 +306,14 @@ def get_STAC_ImColl(S2A_sensor, Region, ProjStr, Scale, StartStr, EndStr, GroupB
 # 
 #############################################################################################################
 def attach_score(inImg):
-  red = inImg.red
-  nir = inImg.nir08
+  img = inImg + 0.001
 
-  inImg['score'] = (nir - red)/(nir + red)
+  red = img.red
+  nir = img.nir08
 
-  return inImg
+  img['score'] = (nir - red)/(nir + red)
+
+  return img
 
 
 
@@ -391,14 +371,29 @@ def get_sub_mosaic(S2A_sensor, SubRegion, ProjStr, Scale, StartStr, EndStr):
   
   #==================================================================================================
   # Apply default pixel mask to each of the images
+  # Note: calling "fillna" function before invaking "argmax" function is very important!!!
   #==================================================================================================
-  scored_IC = attach_score(masked_IC)
+  scored_IC   = attach_score(masked_IC).fillna(-0.0001)
+  max_indices = scored_IC['score'].argmax(dim='time')
 
-  return scored_IC.isel(time=0)
-  base_img = base_img.where(base_img.score > reindexed_sub_mosaic.score, base_img, reindexed_sub_mosaic)
+  sub_mosaic = scored_IC.isel(time=max_indices)
 
+  '''
+  nImgs     = scored_IC.sizes['time']
 
-  return masked_IC.median(dim='time')
+  sub_mosaic = scored_IC.isel(time=0)
+  #sub_img2   = scored_IC.isel(time=1)
+
+  #return sub_mosaic, sub_img2
+  for i in range(1, nImgs):
+    new_img    = scored_IC.isel(time=i)
+    sub_mosaic, new_img = xr.align(sub_mosaic, new_img, join='outer')
+
+    merged = sub_mosaic.where(sub_mosaic.score > new_img.score, sub_mosaic, new_img)
+    sub_mosaic = merged
+  '''
+
+  return sub_mosaic
 
 
 
