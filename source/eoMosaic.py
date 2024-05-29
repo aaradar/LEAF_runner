@@ -1,9 +1,15 @@
+
+import os
 from datetime import datetime, timedelta
 
 import xarray as xr
 import pystac_client
 import odc.stac
 from dask.diagnostics import ProgressBar
+
+import eoImage as eoIM
+
+
 
 #from odc.geo.geobox import GeoBox
 #from rasterio.enums import Resampling
@@ -173,7 +179,8 @@ def get_resolution(xr_img_coll):
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 # 
 #############################################################################################################
-def get_query_conditions(ssr_code, StartStr, EndStr):
+def get_query_conditions(SsrData, StartStr, EndStr):
+  ssr_code = SsrData['SSR_CODE']
   query_conds = {}
   
   #==================================================================================================
@@ -209,9 +216,9 @@ def get_query_conditions(ssr_code, StartStr, EndStr):
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 # 
 #############################################################################################################
-def get_base_Image(S2A_sensor, Region, ProjStr, Scale, StartStr, EndStr):
+def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
   # get all query conditions 
-  query_conds = get_query_conditions(S2A_sensor, StartStr, EndStr)
+  query_conds = get_query_conditions(SsrData, StartStr, EndStr)
 
   # use publically available stac link such as
   catalog = pystac_client.Client.open(str(query_conds['catalog'])) 
@@ -228,6 +235,7 @@ def get_base_Image(S2A_sensor, Region, ProjStr, Scale, StartStr, EndStr):
   items = list(search_IC.items())
   print(f"Found: {len(items):d} datasets")
   
+  #print('<<<<<<<get_base_Image>>>>>>> info on an item = ', items[0].to_dict())
   #==================================================================================================
   # define a geobox for my region
   #==================================================================================================
@@ -260,9 +268,9 @@ def get_base_Image(S2A_sensor, Region, ProjStr, Scale, StartStr, EndStr):
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 # 
 #############################################################################################################
-def get_STAC_ImColl(S2A_sensor, Region, ProjStr, Scale, StartStr, EndStr, GroupBy=True):
+def get_STAC_ImColl(SsrData, Region, ProjStr, Scale, StartStr, EndStr, GroupBy=True):
   # get all query conditions 
-  query_conds = get_query_conditions(S2A_sensor, StartStr, EndStr)
+  query_conds = get_query_conditions(SsrData, StartStr, EndStr)
 
   # use publically available stac link such as
   catalog = pystac_client.Client.open(str(query_conds['catalog'])) 
@@ -299,21 +307,53 @@ def get_STAC_ImColl(S2A_sensor, Region, ProjStr, Scale, StartStr, EndStr, GroupB
 
 
 
+
 #############################################################################################################
-# Description: This function attaches a score band to each image object in a given image collection.
+# Description: This function returns reference bands for the blue and NIR bands.
+#
+# Revision history:  2024-May-28  Lixin Sun  Initial creation
+# 
+#############################################################################################################
+def get_score_refers(masked_IC):
+  median_img = masked_IC.median(dim='time')
+  median_sw2 = median_img.swir22
+  median_nir = median_img.nir08
+  median_red = median_img.nir08
+
+  red = inImg.red
+  nir = inImg.nir08
+
+  inImg['score'] = (nir - red)/(nir + red + 0.0001)
+
+  return inImg
+
+
+
+
+#############################################################################################################
+# Description: This function attaches a score band to each image object in a xarray.Dataset.
 #
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 # 
 #############################################################################################################
-def attach_score(inImg):
-  img = inImg + 0.001
+def attach_score(masked_IC):
+  print(masked_IC)
 
-  red = img.red
-  nir = img.nir08
+  if 'time' in masked_IC.dims:
+    median_img = masked_IC.median(dim='time')
+    median_sw2 = median_img.swir22
+  
+    red = masked_IC.red
+    nir = masked_IC.nir08
 
-  img['score'] = (nir - red)/(nir + red)
+    masked_IC['score'] = (nir - red)/(nir + red + 0.0001)
+  else:
+    red = masked_IC.red
+    nir = masked_IC.nir08
 
-  return img
+    masked_IC['score'] = (nir - red)/(nir + red + 0.0001)
+
+  return masked_IC
 
 
 
@@ -325,9 +365,9 @@ def attach_score(inImg):
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 # 
 #############################################################################################################
-def get_sub_mosaic(S2A_sensor, SubRegion, ProjStr, Scale, StartStr, EndStr):
+def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr):
   # get all query conditions 
-  query_conds = get_query_conditions(S2A_sensor, StartStr, EndStr)
+  query_conds = get_query_conditions(SsrData, StartStr, EndStr)
 
   # use publically available stac link such as
   catalog = pystac_client.Client.open(str(query_conds['catalog'])) 
@@ -368,12 +408,16 @@ def get_sub_mosaic(S2A_sensor, SubRegion, ProjStr, Scale, StartStr, EndStr):
   scl = raw_IC.scl
   condition = (raw_IC > 0) & (scl != 3) & (scl != 8) & (scl != 9)  # & (scl != 10)
   masked_IC = raw_IC.where(condition)
-  
+
   #==================================================================================================
-  # Apply default pixel mask to each of the images
+  # Apply gain and offset to each band in a xarray dataset
+  #==================================================================================================
+  ready_IC = eoIM.apply_gain_offset(masked_IC, SsrData, 100, False)
+
+  #==================================================================================================
   # Note: calling "fillna" function before invaking "argmax" function is very important!!!
   #==================================================================================================
-  scored_IC   = attach_score(masked_IC).fillna(-0.0001)
+  scored_IC   = attach_score(ready_IC).fillna(-0.0001)
   max_indices = scored_IC['score'].argmax(dim='time')
 
   sub_mosaic = scored_IC.isel(time=max_indices)
@@ -403,11 +447,11 @@ def get_sub_mosaic(S2A_sensor, SubRegion, ProjStr, Scale, StartStr, EndStr):
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 # 
 #############################################################################################################
-def period_mosaic(S2A_sensor, Region, ProjStr, Scale, StartStr, EndStr):
+def period_mosaic(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
   #==========================================================================================================
   # Create a base image that has full spatial dimensions of the specified region
   #==========================================================================================================
-  base_img = get_base_Image(S2A_sensor, Region, ProjStr, Scale, StartStr, EndStr)
+  base_img = get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr)
   
   base_img = attach_score(base_img)*0.0
   base_img = base_img.where(base_img > 0)
@@ -421,7 +465,7 @@ def period_mosaic(S2A_sensor, Region, ProjStr, Scale, StartStr, EndStr):
     print('<period_mosaic> create a sub-mosaic for ', sub_region)
     sub_polygon = {'type': 'Polygon',  'coordinates': [sub_region] }
 
-    sub_mosaic = get_sub_mosaic(S2A_sensor, sub_polygon, ProjStr, Scale, StartStr, EndStr)
+    sub_mosaic = get_sub_mosaic(SsrData, sub_polygon, ProjStr, Scale, StartStr, EndStr)
     
     sub_mosaic = attach_score(sub_mosaic)
     sub_mosaic = sub_mosaic.where(sub_mosaic > 0)    
@@ -436,6 +480,32 @@ def period_mosaic(S2A_sensor, Region, ProjStr, Scale, StartStr, EndStr):
 
 
 
+#############################################################################################################
+# Description: This function exports the band images in a mosaic to separate GeoTiff files
+#
+# Revision history:  2024-May-24  Lixin Sun  Initial creation
+# 
+#############################################################################################################
+def export_mosaic(inMosaic, DIR_path, Scale, ProjStr):
+
+  mosaic = inMosaic.rio.write_crs(ProjStr, inplace=True)  # Assuming WGS84 for this example
+  #==========================================================================================================
+  # Create a directory to store the output files
+  #==========================================================================================================
+  os.makedirs(DIR_path, exist_ok=True)
+     
+  #==========================================================================================================
+  # Create individual sub-mosaic and combine it into base image based on score
+  #==========================================================================================================
+  for band in mosaic.data_vars:
+    out_img  = mosaic[band]
+    filename = f"{band}_{Scale}m.tif"
+    output_path = os.path.join(DIR_path, filename)
+    out_img.rio.to_raster(output_path)
+
+
+
+  
 
 '''
 # define a mask for valid pixels (non-cloud)
