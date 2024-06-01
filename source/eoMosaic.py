@@ -1,34 +1,22 @@
 
 import os
+import math
 from datetime import datetime, timedelta
+import numpy as np
+import pandas as pd
 
 import xarray as xr
-import pystac_client
+#from pystac_client.stac_api_io import StacApiIO
+from pystac_client.client import Client
+
 import odc.stac
 from dask.diagnostics import ProgressBar
 
 import eoImage as eoIM
+import eoUtils as eoUs
 
 
 
-#from odc.geo.geobox import GeoBox
-#from rasterio.enums import Resampling
-
-UNKNOWN_sensor = 0
-LS5_sensor     = 5
-LS7_sensor     = 7
-LS8_sensor     = 8
-LS9_sensor     = 9
-LS_sensor      = 19
-MAX_LS_CODE    = 20
-S2A_sensor     = 21
-S2B_sensor     = 22
-S1B_sensor     = 41
-S1B_sensor     = 42
-
-
-MOD_sensor     = 50     # MODIS sensor
-HLS_sensor     = 100    # Harmonized Landsat and Sentinel-2
 
 
 
@@ -62,68 +50,6 @@ tile55_922 = {
     ]
 }
 
-
-
-
-
-#############################################################################################################
-# Description: This function returns a boundary box [min(longs), min(lats), max(longs), max(lats)] based on 
-#              a given geographic region defined by Lats/Longs.
-#
-# Revision history:  2024-May-27  Lixin Sun  Initial creation
-# 
-#############################################################################################################
-def get_region_bbox(inRegion):
-  coords = inRegion['coordinates'][0]
-  nCoords = len(coords)
-   
-  longs = []
-  lats  = []
-
-  for i in range(nCoords):
-    longs.append(coords[i][0]) 
-    lats.append(coords[i][1])
-
-  return [min(longs), min(lats), max(longs), max(lats)]
-
-
-
-
-#############################################################################################################
-# Description: This function divides the bbox associated with a given geographic region (defined by 
-#              Lats/Longs) into a number of sub-bboxes
-#
-# Revision history:  2024-May-27  Lixin Sun  Initial creation
-# 
-#############################################################################################################
-def divide_region(inRegion, nDivides):
-  if nDivides <= 0:
-    nDivides = 2
-
-  # Obtain the bbox of the given geographic region 
-  bbox = get_region_bbox(inRegion)
-  left_lon = bbox[0]
-  btom_Lat = bbox[1]
-
-  lon_delta = (bbox[2] - left_lon)/nDivides
-  lat_delta = (bbox[3] - btom_Lat)/nDivides
-
-  sub_regions = []  
-  for i in range(nDivides):    
-    for j in range(nDivides):
-      sub_region = []
-      BL_lon = left_lon+i*lon_delta
-      BL_lat = btom_Lat+j*lat_delta
-
-      sub_region.append([BL_lon, BL_lat])
-      sub_region.append([BL_lon+lon_delta, BL_lat])
-      sub_region.append([BL_lon+lon_delta, BL_lat+lat_delta])
-      sub_region.append([BL_lon, BL_lat+lat_delta])
-      sub_region.append([BL_lon, BL_lat])
-  
-      sub_regions.append(sub_region)
-  
-  return sub_regions
 
 
 
@@ -198,7 +124,7 @@ def get_query_conditions(SsrData, StartStr, EndStr):
   #==================================================================================================
   query_conds['filters'] = {"s2:cloud_shadow_percentage": {"lt": 0.9} }
 
-  if ssr_code > MAX_LS_CODE & ssr_code < MOD_sensor:
+  if ssr_code > eoIM.MAX_LS_CODE & ssr_code < eoIM.MOD_sensor:
     query_conds['catalog']    = "https://earth-search.aws.element84.com/v1"
     query_conds['collection'] = "sentinel-2-l2a"
     query_conds['timeframe']  = str(StartStr) + '/' + str(EndStr)
@@ -221,7 +147,10 @@ def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
   query_conds = get_query_conditions(SsrData, StartStr, EndStr)
 
   # use publically available stac link such as
-  catalog = pystac_client.Client.open(str(query_conds['catalog'])) 
+  #stac_api_io = StacApiIO()
+  #stac_api_io.session.verify = "C:\\Users\\lsun"
+  #catalog = Client.from_file('https://earth-search.aws.element84.com/v1', stac_io = stac_api_io)
+  catalog = Client.open(str(query_conds['catalog'])) 
 
   #==================================================================================================
   # Search and filter a image collection
@@ -240,7 +169,7 @@ def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
   # define a geobox for my region
   #==================================================================================================
   # lazily combine items
-  mybbox = get_region_bbox(Region)
+  mybbox = eoUs.get_region_bbox(Region)
   print('<get_STAC_ImColl> The bbox of the given region = ', mybbox)
 
   ds_xr = odc.stac.load([items[0], items[1]],
@@ -253,7 +182,7 @@ def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
   # actually load it
   with ProgressBar():
     ds_xr.load()
-
+  
   return ds_xr.isel(time=0)
 
 
@@ -273,7 +202,7 @@ def get_STAC_ImColl(SsrData, Region, ProjStr, Scale, StartStr, EndStr, GroupBy=T
   query_conds = get_query_conditions(SsrData, StartStr, EndStr)
 
   # use publically available stac link such as
-  catalog = pystac_client.Client.open(str(query_conds['catalog'])) 
+  catalog = Client.open(str(query_conds['catalog'])) 
 
   #==================================================================================================
   # Search and filter a image collection
@@ -291,7 +220,7 @@ def get_STAC_ImColl(SsrData, Region, ProjStr, Scale, StartStr, EndStr, GroupBy=T
   # define a geobox for my region
   #==================================================================================================
   # lazily combine items
-  mybbox = get_region_bbox(Region)
+  mybbox = eoUs.get_region_bbox(Region)
   print('<get_STAC_ImColl> The bbox of the given region = ', mybbox)
 
   ds_xr = odc.stac.load(search_IC.items(),
@@ -314,47 +243,184 @@ def get_STAC_ImColl(SsrData, Region, ProjStr, Scale, StartStr, EndStr, GroupBy=T
 # Revision history:  2024-May-28  Lixin Sun  Initial creation
 # 
 #############################################################################################################
-def get_score_refers(masked_IC):
-  median_img = masked_IC.median(dim='time')
-  median_sw2 = median_img.swir22
-  median_nir = median_img.nir08
-  median_red = median_img.nir08
+def get_score_refers(ready_IC):
+  #==========================================================================================================
+  # create a median image from the ready Image collection
+  #==========================================================================================================
+  median_img = ready_IC.median(dim='time').astype(np.float32)
+  print('\n<get_score_refers> median image = ', median_img)
+  #==========================================================================================================
+  # Extract separate bands from the median image, then calculate NDVI and modeled blue median band
+  #==========================================================================================================
+  blu = median_img.blue
+  red = median_img.red
+  nir = median_img.nir08
+  sw2 = median_img.swir22
+  
+  NDVI      = (nir - red)/(nir + red + 0.0001)  
+  #print('\n\nNDVI = ', NDVI)
+  model_blu = sw2*0.25
+  
+  #==========================================================================================================
+  # Correct the blue band values of median mosaic for the pixels with NDVI values larger than 0.3
+  #========================================================================================================== 
+  condition = (model_blu > blu) | (NDVI < 0.3) | (sw2 < blu)
+  median_img['blue'] = median_img['blue'].where(condition, other = model_blu)
+  #print('\n\nnew median image = ', median_img)
 
-  red = inImg.red
-  nir = inImg.nir08
-
-  inImg['score'] = (nir - red)/(nir + red + 0.0001)
-
-  return inImg
+  return median_img
 
 
 
 
 #############################################################################################################
-# Description: This function attaches a score band to each image object in a xarray.Dataset.
+# Description: This function attaches a score band to each image within a xarray Dataset.
+#
+# Note:        The given "masked_IC" may be either an image collection with time dimension or a single image
+#              without time dimension
 #
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 # 
 #############################################################################################################
-def attach_score(masked_IC):
-  print(masked_IC)
-
-  if 'time' in masked_IC.dims:
-    median_img = masked_IC.median(dim='time')
-    median_sw2 = median_img.swir22
+def attach_score(SsrData, ready_IC, StartStr, EndStr):
+  '''Attaches a score band to each image within a xarray Dataset (similar to an image collection in GEE)
+  '''
+  #print('<attach_score> ready IC = ', ready_IC)
+  #==========================================================================================================
+  # Attach an empty layer (with all pixels equal to ZERO) to eath temporal item (an image here) in "ready_IC" 
+  #==========================================================================================================
+  zero_img = ready_IC[SsrData['BLU']]*0.0 
+  ready_IC[eoIM.pix_score] = zero_img.astype(np.float32)
   
-    red = masked_IC.red
-    nir = masked_IC.nir08
+  #print('\n\n<attach_score> ready IC after adding empty pixel score = ', ready_IC)
+  #print('\n\n<attach_score> all pixel score layers in ready_IC = ', ready_IC[eoIM.pix_score])
+  #==========================================================================================================
+  # Determine central Date of a compositing period and a median image of all spectral bands
+  #==========================================================================================================
+  midDate = datetime.strptime(eoUs.period_centre(StartStr, EndStr), "%Y-%m-%d")
 
-    masked_IC['score'] = (nir - red)/(nir + red + 0.0001)
-  else:
-    red = masked_IC.red
-    nir = masked_IC.nir08
+  median     = get_score_refers(ready_IC)
+  median_blu = median[SsrData['BLU']]
+  median_nir = median[SsrData['NIR']]
 
-    masked_IC['score'] = (nir - red)/(nir + red + 0.0001)
+  #==========================================================================================================
+  # Modify the empty layer with time and spectral scores  
+  #==========================================================================================================
+  for i, time_value in enumerate(ready_IC.time.values):
+    #print(f"<get_sub_mosaic> Index: {i}, Timestamp: {time_value}")    
+    #--------------------------------------------------------------------------------------------------------
+    # Record time score for each temporal item
+    #--------------------------------------------------------------------------------------------------------
+    timestamp = pd.Timestamp(time_value).to_pydatetime()
+    time_sc   = time_score(timestamp, midDate, SsrData['SSR_CODE'])   
+    
+    #--------------------------------------------------------------------------------------------------------
+    # Multiply with spectral score
+    #--------------------------------------------------------------------------------------------------------
+    img = ready_IC.isel(time=i) 
+    
+    spec_sc = spec_score(SsrData, img, median_blu, median_nir) 
+    
+    ready_IC[eoIM.pix_score][i, :,:] = spec_sc * time_sc 
+    #ready_IC[eoIM.pix_score][i] = spec_sc * time_sc
 
-  return masked_IC
+  return ready_IC
 
+
+
+
+
+######################################################################################################
+# Description: This function creates a map with all the pixels having an identical time score for a
+#              given image. Time score is calculated based on the date gap between the acquisition
+#              date of the given image and a reference date (midDate parameter), which normally is
+#              the middle date of a time period (e.g., a peak growing season).
+#
+# Revision history:  2024-May-31  Lixin Sun  Initial creation
+#
+######################################################################################################
+def time_score(ImgDate, MidDate, SsrCode):
+  '''Return a time score image corresponding to a given image
+  
+     Args:
+        ImgDate (datetime object): A given ee.Image object to be generated a time score image.
+        MidData (datetime object): The centre date of a time period for a mosaic generation.
+        SsrCode (int): The sensor type code. '''
+  
+  #==================================================================================================
+  # Calculate the date difference between image date and a reference date  
+  #==================================================================================================  
+  date_diff = (ImgDate - MidDate).days  
+
+  #==================================================================================================
+  # Calculatr time score according to sensor type 
+  #==================================================================================================
+  std = 12 if int(SsrCode) > eoIM.MAX_LS_CODE else 16  
+
+  return 1.0/math.exp(0.5 * pow(date_diff/std, 2))
+
+
+
+
+
+#############################################################################################################
+# Description: This function attaches a score band to each image within a xarray Dataset.
+#
+# Note:        The given "masked_IC" may be either an image collection with time dimension or a single image
+#              without time dimension
+#
+# Revision history:  2024-May-24  Lixin Sun  Initial creation
+# 
+#############################################################################################################
+def spec_score(SsrData, inImg, median_blu, median_nir):
+  '''Attaches a score band to each image within a xarray Dataset
+     Args:
+       inImg(xarray dataset): a given single image;
+       medianImg(xarray dataset): a given median image.'''
+  
+  blu = inImg[SsrData['BLU']]
+  grn = inImg[SsrData['GRN']]
+  red = inImg[SsrData['RED']]
+  nir = inImg[SsrData['NIR']]
+  sw1 = inImg[SsrData['SW1']]
+  sw2 = inImg[SsrData['SW2']]
+
+  min_val = 0.01
+  max_SV = xr.apply_ufunc(np.maximum, blu, grn)
+  max_SV = max_SV.where(max_SV > min_val, min_val)
+
+  max_SW = xr.apply_ufunc(np.maximum, sw1, sw2)
+  max_SW = max_SW.where(max_SW > min_val, min_val)
+
+  max_IR = xr.apply_ufunc(np.maximum, nir, max_SW)
+  max_IR = max_IR.where(max_IR > min_val, min_val)
+    
+  #print('\n\n<attach_score> max_SV = ', max_SV)
+  #print('\n\n<attach_score> max_SW = ', max_SW)
+  #print('\n<attach_score> max_IR = ', max_IR)
+  #==================================================================================================
+  # Calculate scores assuming all the pixels are water
+  #==================================================================================================
+  water_score = max_SV/max_IR
+  water_score = water_score.where(median_blu > blu, -1*water_score)
+  #print('\n<attach_score> water_score = ', water_score)
+
+  #==================================================================================================
+  # Calculate scores assuming all the pixels are land
+  #==================================================================================================
+  blu_pen = xr.apply_ufunc(np.abs, blu - median_blu)
+  nir_pen = xr.apply_ufunc(np.abs, nir - median_nir)
+  STD_blu = xr.apply_ufunc(np.maximum, sw2*0.25, red*0.5+0.8) 
+  STD_blu = xr.apply_ufunc(np.maximum, STD_blu, blu) 
+    
+  #print('\n\n\n<attach_score> blu_pen = ', blu_pen)
+  #print('\n\n\n<attach_score> nir_pen = ', nir_pen)
+  #print('\n\n\n<attach_score> STD_blu = ', STD_blu)
+
+  land_score = nir/(STD_blu + blu_pen + nir_pen)  
+
+  return land_score.where((max_SV < max_IR) | (max_SW > 3.0), water_score)
+  
 
 
 
@@ -370,7 +436,7 @@ def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr):
   query_conds = get_query_conditions(SsrData, StartStr, EndStr)
 
   # use publically available stac link such as
-  catalog = pystac_client.Client.open(str(query_conds['catalog'])) 
+  catalog = Client.open(str(query_conds['catalog'])) 
 
   #==================================================================================================
   # Search and filter a image collection
@@ -387,7 +453,7 @@ def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr):
   #==================================================================================================
   # lazily combine items
   #==================================================================================================
-  mybbox = get_region_bbox(SubRegion)
+  mybbox = eoUs.get_region_bbox(SubRegion)
   print('<get_STAC_ImColl> The bbox of the given region = ', mybbox)
 
   raw_IC = odc.stac.load(search_IC.items(),
@@ -401,26 +467,25 @@ def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr):
   # actually load it
   with ProgressBar():
     raw_IC.load()
-
+  
   #==================================================================================================
   # Apply default pixel mask to each of the images
   #==================================================================================================
   scl = raw_IC.scl
-  condition = (raw_IC > 0) & (scl != 3) & (scl != 8) & (scl != 9)  # & (scl != 10)
+  condition = (raw_IC > 0) & (scl != 3) & (scl != 8) & (scl != 9) & (scl != 1)
   masked_IC = raw_IC.where(condition)
 
   #==================================================================================================
   # Apply gain and offset to each band in a xarray dataset
   #==================================================================================================
   ready_IC = eoIM.apply_gain_offset(masked_IC, SsrData, 100, False)
-
+  print('\nFinished applying gain and offset\n')
   #==================================================================================================
   # Note: calling "fillna" function before invaking "argmax" function is very important!!!
   #==================================================================================================
-  scored_IC   = attach_score(ready_IC).fillna(-0.0001)
-  max_indices = scored_IC['score'].argmax(dim='time')
-
-  sub_mosaic = scored_IC.isel(time=max_indices)
+  scored_IC   = attach_score(SsrData, ready_IC, StartStr, EndStr).fillna(-0.0001)
+  max_indices = scored_IC[eoIM.pix_score].argmax(dim='time')
+  sub_mosaic  = scored_IC.isel(time=max_indices)
 
   '''
   nImgs     = scored_IC.sizes['time']
@@ -451,15 +516,16 @@ def period_mosaic(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
   #==========================================================================================================
   # Create a base image that has full spatial dimensions of the specified region
   #==========================================================================================================
-  base_img = get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr)
+  base_img = get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr)*0.0
   
-  base_img = attach_score(base_img)*0.0
+  base_img[eoIM.pix_score] = base_img[SsrData['BLU']]
+  #base_img = attach_score(SsrData, base_img, StartStr, EndStr)*0.0
   base_img = base_img.where(base_img > 0)
   
   #==========================================================================================================
   # Create individual sub-mosaic and combine it into base image based on score
   #==========================================================================================================
-  sub_regions = divide_region(Region, 3)
+  sub_regions = eoUs.divide_region(Region, 3)
 
   for sub_region in sub_regions:
     print('<period_mosaic> create a sub-mosaic for ', sub_region)
@@ -467,7 +533,7 @@ def period_mosaic(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
 
     sub_mosaic = get_sub_mosaic(SsrData, sub_polygon, ProjStr, Scale, StartStr, EndStr)
     
-    sub_mosaic = attach_score(sub_mosaic)
+    #sub_mosaic = attach_score(sub_mosaic)
     sub_mosaic = sub_mosaic.where(sub_mosaic > 0)    
 
     #base_img = xr.merge([base_img, sub_mosaic], compat='override') # Didn't work
@@ -505,25 +571,86 @@ def export_mosaic(inMosaic, DIR_path, Scale, ProjStr):
 
 
 
-  
+
+
 
 '''
-# define a mask for valid pixels (non-cloud)
-def is_valid_pixel(data):
-    # include only vegetated, not_vegitated, water, and snow
-    return ((data > 3) & (data < 7)) | (data == 11)
+#!pip install geemap
+import os
+import sys
 
-ds_odc['valid'] = is_valid_pixel(ds_odc.scl)
-ds_odc.valid.sum("time").plot()
+#Get the absolute path to the parent of current working directory 
+cwd    = os.getcwd()
+source_path = os.path.join(cwd, 'source')
+sys.path.append(source_path)
+sys.path
 
-# compute the masked median
-rgb_median = (
-    ds_odc[['red', 'green', 'blue']]
-    .where(ds_odc.valid)
-    .to_dataarray(dim="band")
-    .transpose(..., "band")
-    .median(dim="time")
+
+import eoImage as eoIM
+
+sub_region = {
+    'type': 'Polygon',
+    'coordinates': [
+       [[-78.6303, 44.2113],         
+        [-77.0455, 44.2113], 
+        [-77.0455, 45.318], 
+        [-78.6303, 45.318], 
+        [-78.6303, 44.2113]]
+    ]
+}
+
+
+start_str    = '2019-07-01'
+end_str      = '2019-07-31'
+scale        = 100
+ssr_data     = eoIM.SSR_META_DICT['S2_SR']
+
+    
+#mosaic = period_mosaic(ssr_data, sub_region, 'EPSG:3979', scale, start_str, end_str)
+mosaic = get_sub_mosaic(ssr_data, sub_region, 'EPSG:3979', scale, start_str, end_str)
+mosaic.to_netcdf('C:\\Work_documents\\stac_mosaic.nc')
+#export_mosaic(mosaic, 'C:\\Work_documents\\stac_mosaic', scale, 'EPSG:3979')
+'''
+
+
+'''
+import xarray as xr
+import numpy as np
+
+# Define the dimensions
+time_dim = 3
+spatial_dim_x = 2
+spatial_dim_y = 2
+bands = ["blue", "green", "red", "nir08", "swir16", "swir22"]
+
+# Create the coordinates
+times = np.arange(time_dim)
+x = np.arange(spatial_dim_x)
+y = np.arange(spatial_dim_y)
+
+# Initialize data for each band with random values
+data = {
+    band: (("time", "x", "y"), np.random.randint(0, 100, size=(time_dim, spatial_dim_x, spatial_dim_y)))
+    for band in bands
+}
+
+# Create the xarray dataset
+dataset = xr.Dataset(
+    data,
+    coords={
+        "time": times,
+        "x": x,
+        "y": y,
+    }
 )
-(rgb_median / rgb_median.max() * 2).plot.imshow(rgb="band", figsize=(10, 8))
-'''
 
+start_str = '2019-07-01'
+end_str   = '2019-07-31'
+ssr_data  = eoIM.SSR_META_DICT['S2_SR']
+
+print(dataset)
+#get_score_refers(dataset)
+score = attach_score(ssr_data, dataset, start_str, end_str)
+print('\n\n\nscore = ', score)
+print('\nend testing!!!')
+'''

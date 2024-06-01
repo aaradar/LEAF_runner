@@ -4,7 +4,7 @@ import numpy as np
 import datetime
 
 import xarray as xr
-import source.eoGeometry as eoGM
+import eoUtils as eoUs
 
 
 
@@ -41,7 +41,7 @@ RED1_band      = 9
 WV_band        = 10
 
 
-pix_score       = 'pix_score'
+pix_score       = 'score'
 score_target    = 'score_target'
 pix_date        = 'date'
 neg_blu_score   = 'neg_blu_score'
@@ -65,23 +65,23 @@ SSR_META_DICT = {
              'DATA_UNIT': sur_ref,
              'GAIN': 0.0001,
              'OFFSET': 0,
-             'ALL_BANDS': ['blue', 'green', 'red', 'nir08', 'swir16', 'swir22'],
+             'ALL_BANDS': ['blue', 'green', 'red', 'rededge1', 'rededge2', 'rededge3', 'nir08', 'swir16', 'swir22'],
              'OUT_BANDS': ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12'], 
-             '10M_BANDS': ['B2', 'B3', 'B4', 'B8'],
-             'SIX_BANDS': ['B2', 'B3', 'B4', 'B8A', 'B11', 'B12'],
-             'NoA_BANDS': ['B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12'],
+             '10M_BANDS': ['blue', 'green', 'red', 'nir08'],
+             'SIX_BANDS': ['blue', 'green', 'red', 'nir08', 'swir16', 'swir22'],
+             'NoA_BANDS': ['red', 'rededge1', 'rededge2', 'rededge3', 'nir08', 'swir16', 'swir22'],
              'GEE_NAME': 'COPERNICUS/S2_SR_HARMONIZED',
              'CLOUD': 'CLOUDY_PIXEL_PERCENTAGE',
              'SZA': 'view:sun_elevation',
              'SAA': 'view:sun_azimuth', 
              'VZA': 'view:sun_elevation',            
              'VAA': 'view:sun_azimuth',
-             'BLU': 'B2',
-             'GRN': 'B3',
-             'RED': 'B4',
-             'NIR': 'B8A',
-             'SW1': 'B11',
-             'SW2': 'B12'},
+             'BLU': 'blue',
+             'GRN': 'green',
+             'RED': 'red',
+             'NIR': 'nir08',
+             'SW1': 'swir16',
+             'SW2': 'swir22'},
 
   'S2_TOA': {'NAME': 'S2_TOA',
              'SSR_CODE': S2A_sensor,
@@ -387,6 +387,7 @@ def get_SsrData_key(SsrCode, DataUnit):
 
 
 
+
 #############################################################################################################
 # Description: This function returns a cloud coverage percentage based on a given region and sensor data.
 #
@@ -400,7 +401,7 @@ def get_cloud_rate(SsrData, Region):
         Region(Dictionary): A geospatial region of ROI.'''  
 
   # Determine the centre point of the given geographical region
-  cLon, cLat = eoGM.get_region_centre(Region)
+  cLon, cLat = eoUs.get_region_centre(Region)
 
   # Determine cloud coverage percentage based on sensor type and latitude
   ST2_rate = 85 if cLat < 55 else 70
@@ -477,7 +478,7 @@ def apply_gain_offset(xrDS, SsrData, MaxRef, all_bands):
   if all_bands == True:
     return xrDS*gain + offset
   else:
-    band_names = SsrData['ALL_BANDS']      # Get the names of all optical bands
+    band_names = SsrData['SIX_BANDS']      # Get the names of all optical bands
     operation  = lambda x: (x*gain + offset).astype(np.float32)
 
     return xrDS.assign(**{var: operation(xrDS[var]) for var in band_names})
