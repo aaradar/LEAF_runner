@@ -6,12 +6,12 @@ import numpy as np
 import pandas as pd
 
 import xarray as xr
+import rioxarray as rxr
 from pystac_client.client import Client
 
-from pystac_client.stac_api_io import StacApiIO
-
-stac_api_io = StacApiIO()
-stac_api_io.session.verify = "C:\\Users\\lsun\\NRCAN-RootCA.crt"
+#from pystac_client.stac_api_io import StacApiIO
+#stac_api_io = StacApiIO()
+#stac_api_io.session.verify = "C:\\Users\\lsun\\NRCAN-RootCA.crt"
 #stac_api_io.session.verify = "C:\Users\lsun\nrcan_azure_amazon.cer"
 
 import odc.stac
@@ -153,8 +153,8 @@ def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
 
   # use publically available stac link such as
   #catalog = Client.from_file(query_conds['catalog'], stac_io = stac_api_io)
-  catalog = Client.open(query_conds['catalog'], stac_io = stac_api_io)
-  #catalog = Client.open(str(query_conds['catalog'])) 
+  #catalog = Client.open(query_conds['catalog'], stac_io = stac_api_io)
+  catalog = Client.open(str(query_conds['catalog'])) 
 
   #==================================================================================================
   # Search and filter a image collection
@@ -207,8 +207,8 @@ def get_STAC_ImColl(SsrData, Region, ProjStr, Scale, StartStr, EndStr, GroupBy=T
 
   # use publically available stac link such as
   #catalog = Client.from_file(query_conds['catalog'], stac_io = stac_api_io)
-  catalog = Client.open(query_conds['catalog'], stac_io = stac_api_io)
-  #catalog = Client.open(str(query_conds['catalog'])) 
+  #catalog = Client.open(query_conds['catalog'], stac_io = stac_api_io)
+  catalog = Client.open(str(query_conds['catalog'])) 
 
   #==================================================================================================
   # Search and filter a image collection
@@ -443,8 +443,8 @@ def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr):
 
   # use publically available stac link such as
   #catalog = Client.from_file(query_conds['catalog'], stac_io = stac_api_io)
-  catalog = Client.open(query_conds['catalog'], stac_io = stac_api_io)
-  #catalog = Client.open(str(query_conds['catalog'])) 
+  #catalog = Client.open(query_conds['catalog'], stac_io = stac_api_io)
+  catalog = Client.open(str(query_conds['catalog'])) 
 
   #==================================================================================================
   # Search and filter a image collection
@@ -546,6 +546,11 @@ def period_mosaic(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
 
     #base_img = xr.merge([base_img, sub_mosaic], compat='override') # Didn't work
     base_img = base_img.combine_first(sub_mosaic)
+  
+  #==========================================================================================================
+  # 
+  #==========================================================================================================
+  base_img = base_img.rio.write_crs(ProjStr, inplace=True)
 
   return base_img
   
@@ -562,7 +567,7 @@ def period_mosaic(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
 #############################################################################################################
 def export_mosaic(inMosaic, DIR_path, Scale, ProjStr):
 
-  mosaic = inMosaic.rio.write_crs(ProjStr, inplace=True)  # Assuming WGS84 for this example
+  mosaic = inMosaic    #.rio.write_crs(ProjStr, inplace=True)  # Assuming WGS84 for this example
   #==========================================================================================================
   # Create a directory to store the output files
   #==========================================================================================================
