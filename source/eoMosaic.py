@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 
 import xarray as xr
-import rioxarray as rxr
 from pystac_client.client import Client
 
 #from pystac_client.stac_api_io import StacApiIO
@@ -16,6 +15,12 @@ from pystac_client.client import Client
 
 import odc.stac
 from dask.diagnostics import ProgressBar
+
+# The two things must be noted:
+# (1) this line must be used after "import odc.stac"
+# (2) This line is necessary for exporting a xarray dataset object into separate GeoTiff files,
+#     even it is not utilized directly
+import rioxarray
 
 import eoImage as eoIM
 import eoUtils as eoUs
