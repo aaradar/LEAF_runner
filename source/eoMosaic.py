@@ -515,8 +515,7 @@ def period_mosaic(inParams):
   params  = eoPM.get_mosaic_params(inParams)
 
   SsrData = eoIM.SSR_META_DICT[str(params['sensor'])]
-  ProjStr = str(params['projection'])
-  ProjStr = str(params['projection'])
+  ProjStr = str(params['projection'])  
   Scale   = int(params['resolution'])
 
   Region  = eoPM.get_spatial_region(params)
