@@ -8,10 +8,10 @@ import pandas as pd
 import xarray as xr
 from pystac_client.client import Client
 
-#from pystac_client.stac_api_io import StacApiIO
-#stac_api_io = StacApiIO()
-#stac_api_io.session.verify = "C:\\Users\\lsun\\NRCAN-RootCA.crt"
-#stac_api_io.session.verify = "C:\Users\lsun\nrcan_azure_amazon.cer"
+from pystac_client.stac_api_io import StacApiIO
+stac_api_io = StacApiIO()
+stac_api_io.session.verify = "C:\\Users\\lsun\\nrcan+azure+amazon.cer"
+#stac_api_io.session.verify = "C:/Users/lsun/nrcan+azure+amazon.cer"
 
 import odc.stac
 from dask.diagnostics import ProgressBar
@@ -140,9 +140,9 @@ def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
   query_conds = get_query_conditions(SsrData, StartStr, EndStr)
 
   # use publically available stac link such as
-  #catalog = Client.from_file(query_conds['catalog'], stac_io = stac_api_io)
+  catalog = Client.from_file(query_conds['catalog'], stac_io = stac_api_io)
   #catalog = Client.open(query_conds['catalog'], stac_io = stac_api_io)
-  catalog = Client.open(str(query_conds['catalog'])) 
+  #catalog = Client.open(str(query_conds['catalog'])) 
 
   #==================================================================================================
   # Search and filter a image collection
@@ -174,6 +174,12 @@ def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
   # actually load it
   with ProgressBar():
     ds_xr.load()
+  #with warn.catch_warnings():
+  #  warn.simplefilter('ignore') # Avoids RuntimeWarning about All-NaN slices
+  #with ddiag.ProgressBar():
+  #     #with rio.Env(GDAL_HTTP_UNSAFESSL = 'YES') as env: # Avoids NRCan network blocking access
+  #     # compute (returns python object fit in mem), persist (returns dask object), load (like compute but inplace)
+  #    cube = cube.load()
   
   return ds_xr.isel(time=0)
 
@@ -430,9 +436,9 @@ def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr):
   query_conds = get_query_conditions(SsrData, StartStr, EndStr)
 
   # use publically available stac link such as
-  #catalog = Client.from_file(query_conds['catalog'], stac_io = stac_api_io)
+  catalog = Client.from_file(query_conds['catalog'], stac_io = stac_api_io)
   #catalog = Client.open(query_conds['catalog'], stac_io = stac_api_io)
-  catalog = Client.open(str(query_conds['catalog'])) 
+  #catalog = Client.open(str(query_conds['catalog'])) 
 
   #==================================================================================================
   # Search and filter a image collection
@@ -609,7 +615,7 @@ def export_mosaic(inParams, inMosaic):
 
 
 
-
+'''
 params = {
     'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
@@ -629,6 +635,8 @@ params = {
 }
 
 period_mosaic(params)
+'''
+
 
 
 '''

@@ -1,4 +1,4 @@
-CAN_TILES = {
+CAN_FULL_TILES = {
 'tile13':{'type': 'Polygon', 'coordinates': [[[-147.465, 81.4841], [-123.879, 74.9631], [-91.1246, 76.6016], [-86.4478, 84.4004], [-147.465, 81.4841]]]},
 'tile14':{'type': 'Polygon', 'coordinates': [[[-86.4478, 84.4004], [-91.1246, 76.6016], [-60.1588, 74.0912], [-35.5785, 80.1407], [-86.4478, 84.4004]]]},
 'tile21':{'type': 'Polygon', 'coordinates': [[[-159.132, 63.479], [-145.708, 58.2993], [-132.525, 63.644], [-146.113, 70.0545], [-159.132, 63.479]]]},
@@ -26,6 +26,9 @@ CAN_TILES = {
 'tile56':{'type': 'Polygon', 'coordinates': [[[-68.7488, 48.2563], [-72.8716, 40.8803], [-63.7815, 37.7264], [-58.5508, 44.4557], [-68.7488, 48.2563]]]},
 'tile57':{'type': 'Polygon', 'coordinates': [[[-58.5508, 44.4557], [-63.7815, 37.7264], [-55.8899, 33.7511], [-50.091, 39.7627], [-58.5508, 44.4557]]]},
 'tile65':{'type': 'Polygon', 'coordinates': [[[-83.004, 42.9647], [-84.7296, 35.366], [-75.9096, 33.6475], [-72.8716, 40.8803], [-83.004, 42.9647]]]},
+}
+
+CAN_SUBTILES = {
 'tile13_411':{'type': 'Polygon', 'coordinates': [[[-147.4652, 81.4841], [-132.6652, 78.4676], [-113.2055, 80.1748], [-123.1257, 83.7989], [-147.4652, 81.4841]]]},
 'tile13_412':{'type': 'Polygon', 'coordinates': [[[-123.1257, 83.7989], [-113.2055, 80.1748], [-89.6641, 80.579], [-86.4478, 84.4004], [-123.1257, 83.7989]]]},
 'tile13_421':{'type': 'Polygon', 'coordinates': [[[-132.6652, 78.4676], [-123.8787, 74.9631], [-108.3798, 76.297], [-113.2055, 80.1748], [-132.6652, 78.4676]]]},
@@ -369,7 +372,42 @@ CAN_TILES = {
 
 
 
-def valid_tile_name(inTileName):
-  tile_names = CAN_TILES.keys()
 
-  return inTileName in tile_names
+#############################################################################################################
+# Description: This function returns if a given tile name is valid
+#
+# Revision history:  2024-Jun-05  Lixin Sun  Initial creation
+#
+#############################################################################################################
+def valid_tile_name(inTileName):
+  tile_name = str(inTileName)
+  name_len = len(tile_name)
+
+  if name_len > 7:
+    tile_names = CAN_SUBTILES.keys()    
+
+  else:
+    tile_names = CAN_FULL_TILES.keys()
+
+  return tile_name in tile_names
+
+
+
+
+
+#############################################################################################################
+# Description: This function returns a polygon corresponding to a given tile name
+#
+# Revision history:  2024-Jun-05  Lixin Sun  Initial creation
+#
+#############################################################################################################
+def get_tile_polygon(inTileName):
+  if valid_tile_name(inTileName):
+    tile_name = str(inTileName)
+    name_len = len(tile_name)
+
+    if name_len > 7:
+      return CAN_SUBTILES[tile_name]    
+
+    else:
+      return CAN_FULL_TILES[tile_name]

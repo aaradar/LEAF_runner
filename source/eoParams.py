@@ -259,7 +259,7 @@ def get_spatial_region(inParams):
   elif len(inParams['current_tile']) > 2:
     tile_name = inParams['current_tile']
     if eoTG.valid_tile_name(tile_name):
-      return eoTG.CAN_TILES[inParams['current_tile']]
+      return eoTG.get_tile_polygon(tile_name)
     else:
       print('<get_spatial_region> Invalid spatial region defined!!!!')
       return None
@@ -267,7 +267,7 @@ def get_spatial_region(inParams):
   elif len(inParams['tile_names'][0]) > 2:
     tile_name = inParams['tile_names'][0]
     if eoTG.valid_tile_name(tile_name):
-      return eoTG.CAN_TILES[inParams['tile_names'][0]]
+      return eoTG.get_tile_polygon(tile_name)
     else:
       print('<get_spatial_region> Invalid spatial region defined!!!!')
       return None
