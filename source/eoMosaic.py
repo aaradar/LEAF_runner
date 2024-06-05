@@ -24,7 +24,7 @@ import rioxarray
 
 import eoImage as eoIM
 import eoUtils as eoUs
-
+import eoParams as eoPM
 
 
 
@@ -33,32 +33,9 @@ import eoUtils as eoUs
 #==================================================================================================
 # define a spatial region around Ottawa
 #==================================================================================================
-ottawa_region = {
-    'type': 'Polygon',
-    'coordinates': [
-       [
-         [-76.120,45.184], 
-         [-75.383,45.171],
-         [-75.390,45.564], 
-         [-76.105,45.568], 
-         [-76.120,45.184]
-       ]
-    ]
-}
+ottawa_region = {'type': 'Polygon', 'coordinates': [[[-76.120,45.184], [-75.383,45.171], [-75.390,45.564], [-76.105,45.568], [-76.120,45.184]]]}
 
-
-tile55_922 = {
-    'type': 'Polygon',
-    'coordinates': [
-       [
-         [-77.6221, 47.5314], 
-         [-73.8758, 46.7329],
-         [-75.0742, 44.2113], 
-         [-78.6303, 44.9569],
-         [-77.6221, 47.5314]
-       ]
-    ]
-}
+tile55_922 = {'type': 'Polygon', 'coordinates': [[[-77.6221, 47.5314], [-73.8758, 46.7329], [-75.0742, 44.2113], [-78.6303, 44.9569], [-77.6221, 47.5314]]]}
 
 
 
@@ -131,14 +108,20 @@ def get_query_conditions(SsrData, StartStr, EndStr):
   # s2:not_vegetated_percentage
   # s2:snow_ice_percentage, etc.
   # 
-  #==================================================================================================
-  query_conds['filters'] = {"s2:cloud_shadow_percentage": {"lt": 0.9} }
-
+  #==================================================================================================  
   if ssr_code > eoIM.MAX_LS_CODE & ssr_code < eoIM.MOD_sensor:
     query_conds['catalog']    = "https://earth-search.aws.element84.com/v1"
     query_conds['collection'] = "sentinel-2-l2a"
     query_conds['timeframe']  = str(StartStr) + '/' + str(EndStr)
     query_conds['bands']      = ['blue', 'green', 'red', 'nir08', 'swir16', 'swir22', 'scl']
+    query_conds['filters']    = {"s2:cloud_shadow_percentage": {"lt": 0.9} }
+
+  elif ssr_code < eoIM.MAX_LS_CODE & ssr_code > 0:
+    query_conds['catalog']    = "https://landsatlook.usgs.gov/stac-server"
+    query_conds['collection'] = "landsat-c2l2-sr"
+    query_conds['timeframe']  = str(StartStr) + '/' + str(EndStr)
+    query_conds['bands']      = ['blue', 'green', 'red', 'nir08', 'swir16', 'swir22', 'qa_pixel']
+    query_conds['filters']    = ["eo:cloud_cover<10"]
 
   return query_conds
 
@@ -525,7 +508,20 @@ def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr):
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 # 
 #############################################################################################################
-def period_mosaic(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
+def period_mosaic(inParams):
+  #==========================================================================================================
+  # Obtain required parameters
+  #==========================================================================================================
+  params  = eoPM.get_mosaic_params(inParams)
+
+  SsrData = eoIM.SSR_META_DICT[str(params['sensor'])]
+  ProjStr = str(params['projection'])
+  ProjStr = str(params['projection'])
+  Scale   = int(params['spatial_scale'])
+
+  Region  = eoPM.get_spatial_region(params)
+  StartStr, EndStr = eoPM.get_time_window(params)  
+
   #==========================================================================================================
   # Create a base image that has full spatial dimensions of the specified region
   #==========================================================================================================
@@ -555,12 +551,10 @@ def period_mosaic(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
   #==========================================================================================================
   # 
   #==========================================================================================================
-  base_img = base_img.rio.write_crs(ProjStr, inplace=True)
+  #base_img = base_img.rio.write_crs(ProjStr, inplace=True)
 
   return base_img
   
-
-
 
 
 
@@ -570,26 +564,71 @@ def period_mosaic(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 # 
 #############################################################################################################
-def export_mosaic(inMosaic, DIR_path, Scale, ProjStr):
+def export_mosaic(inParams, inMosaic):
+  #==========================================================================================================
+  # Get all the parameters for exporting composite images
+  #==========================================================================================================
+  params = eoPM.get_mosaic_params(inParams)
+  export_style = str(params['export_style']).lower()
 
-  mosaic = inMosaic    #.rio.write_crs(ProjStr, inplace=True)  # Assuming WGS84 for this example
+  #==========================================================================================================
+  # Convert float pixel values to integers
+  #==========================================================================================================
+  mosaic_int = (inMosaic * 100.0).astype(np.int16)
+  rio_mosaic = mosaic_int.rio.write_crs(params['projection'], inplace=True)  # Assuming WGS84 for this example
   #==========================================================================================================
   # Create a directory to store the output files
   #==========================================================================================================
-  os.makedirs(DIR_path, exist_ok=True)
-     
+  dir_path = params['out_folder']
+  os.makedirs(dir_path, exist_ok=True)
+
+  #==========================================================================================================
+  # Create prefix filename
+  #==========================================================================================================
+  SsrData    = eoIM.SSR_META_DICT[str(params['sensor'])]   
+  region_str = str(params['region_str'])
+  period_str = str(params['time_str'])
+ 
+  filePrefix = f"{SsrData['NAME']}_{region_str}_{period_str}"
+
   #==========================================================================================================
   # Create individual sub-mosaic and combine it into base image based on score
   #==========================================================================================================
-  for band in mosaic.data_vars:
-    out_img  = mosaic[band]
-    filename = f"{band}_{Scale}m.tif"
-    output_path = os.path.join(DIR_path, filename)
-    out_img.rio.to_raster(output_path)
+  spa_scale  = params['spatial_scale']
+  
+  if 'sepa' in export_style:
+    for band in rio_mosaic.data_vars:
+      out_img  = rio_mosaic[band]
+      filename = f"{filePrefix}_{band}_{spa_scale}m.tif"
+      output_path = os.path.join(dir_path, filename)
+      out_img.rio.to_raster(output_path)
+  else:
+    filename = f"{filePrefix}_mosaic_{spa_scale}m.tif"
+    output_path = os.path.join(dir_path, filename)
+    rio_mosaic.to_netcdf(output_path)
 
 
 
 
+'''
+params = {
+    'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
+    'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
+    'year': 2023,                # An integer representing image acquisition year
+    'nbYears': -1,               # positive int for annual product, or negative int for monthly product
+    'months': [8],               # A list of integers represening one or multiple monthes     
+    'tile_name': 'tile42',       # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+    'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
+    'resolution': 20,            # Exporting spatial resolution    
+    'folder': '',                # the folder name for exporting
+    'buff_radius': 10, 
+    'tile_scale': 4,
+    'CloudScore': True,
+
+    'start_date': '2022-06-15',
+    'end_date': '2023-09-15'
+}
+'''
 
 
 '''
