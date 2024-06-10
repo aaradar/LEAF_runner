@@ -202,67 +202,62 @@ def valid_user_params(UserParams):
       all_valid = False
       print('<valid_user_params> \'{}\' key in given parameter dictionary is invalid!'.format(user_keys[index]))
   
-  if all_valid:
+  if all_valid == False:
     return all_valid
   
   #==========================================================================================================
   # Validate some critical individual 'key:value' pairs
   #==========================================================================================================
-  outParams = {}  
-
-  outParams['sensor'] = str(UserParams['sensor']).upper()
+  sensor = str(UserParams['sensor']).upper()
   all_SSRs = ['S2_SR', 'L5_SR', 'L7_SR', 'L8_SR', 'L9_SR']
-  if outParams['sensor'] not in all_SSRs:
+  if sensor not in all_SSRs:
     all_valid = False
     print('<valid_user_params> Invalid sensor or unit was specified!')
 
-  outParams['year'] = int(UserParams['year'])
-  if outParams['year'] < 1970 or outParams['year'] > 2200:
+  year = int(UserParams['year'])
+  if year < 1970 or year > 2200:
     all_valid = False
     print('<valid_user_params> Invalid year was specified!')
 
-  outParams['nbYears'] = int(UserParams['nbYears'])
-  if outParams['nbYears'] > 3:
+  if int(UserParams['nbYears']) > 3:
     all_valid = False
     print('<valid_user_params> Invalid number of years was specified!')
 
-  outParams['months'] = UserParams['months']
-  max_month = max(outParams['months'])
+  max_month = max(UserParams['months'])
   if max_month > 12:
     all_valid = False
     print('<valid_user_params> Invalid month number was specified!')
 
-  outParams['tile_names'] = UserParams['tile_names']
-  nTiles = len(outParams['tile_names'])
+  tile_names = UserParams['tile_names']
+  nTiles = len(tile_names)
   if nTiles < 1:
     all_valid = False
     print('<valid_user_params> No tile name was specified for tile_names key!')
   
-  for tile in outParams['tile_names']:
+  for tile in tile_names:
     if eoTG.valid_tile_name(tile) == False:
       all_valid = False
       print('<valid_user_params> {} is an invalid tile name!'.format(tile))
 
-  outParams['prod_names'] = UserParams['prod_names']
-  nProds = len(outParams['prod_names'])
+  prod_names = UserParams['prod_names']
+  nProds = len(prod_names)
   if nProds < 1:
     all_valid = False
     print('<valid_user_params> No product name was specified for prod_names key!')
   
-  user_prods = list(outParams['prod_names'])
+  user_prods = list(prod_names)
   prod_names = ['LAI', 'fAPAR', 'fCOVER', 'Albedo', 'mosaic', 'QC', 'date', 'partition']
   presence = [element in prod_names for element in user_prods]
   if False in presence:
     all_valid = False
     print('<valid_user_params> At least one of the specified products is invalid!')
 
-  outParams['resolution'] = int(UserParams['resolution'])
-  if outParams['resolution'] < 1:
+  if int(UserParams['resolution']) < 1:
     all_valid = False
     print('<valid_user_params> Invalid spatial resolution was specified!')
 
-  outParams['out_folder'] = str(UserParams['out_folder'])
-  if Path(outParams['out_folder']) == False or len(outParams['out_folder']) < 2:
+  out_folder = str(UserParams['out_folder'])
+  if Path(out_folder) == False or len(out_folder) < 2:
     all_valid = False
     print('<valid_user_params> The specified output path is invalid!')
   
@@ -424,10 +419,7 @@ def get_time_window(inParams):
   
   else:
     current_month = inParams['current_month']
-    if current_month > 12:
-      current_month = 12
-    elif current_month < 1:
-      current_month = 1
+    if current_month > 0  and current_month < 13:
 
       # Extract veg parameters on a monthly basis
       return eoUs.month_range(inParams['year'], current_month)
@@ -435,10 +427,10 @@ def get_time_window(inParams):
       nYears = inParams['nbYears']
       year   = inParams['year']
    
-      if nYears < 0 or current_month < 0:
+      if nYears < 0:
         return eoUs.summer_range(year) 
       else:
-        month = max(inParams['months'])
+        month = inParams['months'][0]
         if month > 12:
           month = 12
         elif month < 1:
@@ -449,18 +441,18 @@ def get_time_window(inParams):
 
 
 
-params = {
-    'sensor': 'S2_Sr',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
-    'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
-    'year': 1023,                # An integer representing image acquisition year
-    'nbYears': -1,               # positive int for annual product, or negative int for monthly product
-    'months': [8,9],               # A list of integers represening one or multiple monthes     
-    'tile_names': ['tile42'],       # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-    'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
-    'resolution': 20,            # Exporting spatial resolution    
-    'out_folder': 'c:/test',                # the folder name for exporting    
-    'start_date': '2022-06-15',
-    'end_date': '2023-09-15'
-}
+# params = {
+#     'sensor': 'S2_Sr',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
+#     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
+#     'year': 1023,                # An integer representing image acquisition year
+#     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
+#     'months': [8,9],               # A list of integers represening one or multiple monthes     
+#     'tile_names': ['tile42'],       # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+#     'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
+#     'resolution': 20,            # Exporting spatial resolution    
+#     'out_folder': 'c:/test',                # the folder name for exporting    
+#     'start_date': '2022-06-15',
+#     'end_date': '2023-09-15'
+# }
 
-valid_user_params(params)
+# valid_user_params(params)

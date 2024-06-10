@@ -504,7 +504,7 @@ def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr):
 
 
 #############################################################################################################
-# Description: This function returns a mosaic image for a sub-region
+# Description: This function returns a mosaic using the image acquired during 
 #
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 # 
@@ -615,25 +615,23 @@ def export_mosaic(inParams, inMosaic):
 
 
 
-# params = {
-#     'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
-#     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
-#     'year': 2022,                # An integer representing image acquisition year
-#     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
-#     'months': [8],               # A list of integers represening one or multiple monthes     
-#     'tile_name': 'tile42_922',   # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-#     'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
-#     'resolution': 1000,          # Exporting spatial resolution    
-#     'folder': 'C:/Work_documents/test_xr_output',                # the folder name for exporting
-#     'buff_radius': 10, 
-#     'tile_scale': 4,
-#     'CloudScore': True,
+params = {
+    'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
+    'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
+    'year': 2022,                # An integer representing image acquisition year
+    'nbYears': 1,                # positive int for annual product, or negative int for monthly product
+    'months': [8],               # A list of integers represening one or multiple monthes     
+    'tile_names': ['tile42_922'],   # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+    'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
+    'resolution': 1000,          # Exporting spatial resolution    
+    'out_folder': 'C:/Work_documents/test_xr_output',   # the folder name for exporting   
+    'CloudScore': True,
 
-#     #'start_date': '2022-06-15',
-#     #'end_date': '2023-09-15'
-# }
+    #'start_date': '2022-06-15',
+    #'end_date': '2023-09-15'
+}
 
-# mosaic = period_mosaic(params)
+mosaic = period_mosaic(params)
 
 # export_mosaic(params, mosaic)
 
