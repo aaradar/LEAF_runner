@@ -534,7 +534,7 @@ def period_mosaic(inParams):
     print('<period_mosaic> Cannot create a mosaic image due to invalid input parameter!')
     return None
   
-  SsrData = eoIM.SSR_META_DICT[str(params['sensor'])]
+  SsrData = eoIM.SSR_META_DICT[str(params['sensor']).upper()]
   ProjStr = str(params['projection'])  
   Scale   = int(params['resolution'])
 
