@@ -118,9 +118,12 @@ def get_query_conditions(SsrData, StartStr, EndStr):
     query_conds['filters']    = {"s2:cloud_shadow_percentage": {"lt": 0.9} }
 
   elif ssr_code < eoIM.MAX_LS_CODE and ssr_code > 0:
-    query_conds['catalog']    = "https://landsatlook.usgs.gov/stac-server"
-    query_conds['collection'] = "landsat-c2l2-sr"
+    #query_conds['catalog']    = "https://landsatlook.usgs.gov/stac-server"
+    #query_conds['collection'] = "landsat-c2l2-sr"
+    query_conds['catalog']    = "https://earth-search.aws.element84.com/v1"
+    query_conds['collection'] = "landsat-c2-l2"
     query_conds['timeframe']  = str(StartStr) + '/' + str(EndStr)
+    #query_conds['bands']      = ['OLI_B2', 'OLI_B3', 'OLI_B4', 'OLI_B5', 'OLI_B6', 'OLI_B7', 'qa_pixel']
     query_conds['bands']      = ['blue', 'green', 'red', 'nir08', 'swir16', 'swir22', 'qa_pixel']
     query_conds['filters']    = ["eo:cloud_cover<10"]
   
@@ -175,7 +178,7 @@ def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
 
   ds_xr = odc.stac.load([items[0], items[1]],
                         bands  = query_conds['bands'],
-                        chunks = {'x': 1000, 'y': 1000},
+                        #chunks = {'x': 1000, 'y': 1000},
                         crs    = ProjStr, 
                         bbox   = mybbox,
                         resolution = Scale)
@@ -627,23 +630,23 @@ def export_mosaic(inParams, inMosaic):
 
 
 
-params = {
-    'sensor': 'L8_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
-    'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
-    'year': 2022,                # An integer representing image acquisition year
-    'nbYears': 1,                # positive int for annual product, or negative int for monthly product
-    'months': [8],               # A list of integers represening one or multiple monthes     
-    'tile_names': ['tile42_922'],   # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-    'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
-    'resolution': 1000,          # Exporting spatial resolution    
-    'out_folder': 'C:/Work_documents/test_xr_output',   # the folder name for exporting   
-    'CloudScore': True,
+# params = {
+#     'sensor': 'L8_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
+#     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
+#     'year': 2022,                # An integer representing image acquisition year
+#     'nbYears': 1,                # positive int for annual product, or negative int for monthly product
+#     'months': [8],               # A list of integers represening one or multiple monthes     
+#     'tile_names': ['tile42_922'],   # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+#     'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
+#     'resolution': 1000,          # Exporting spatial resolution    
+#     'out_folder': 'C:/Work_documents/test_xr_output',   # the folder name for exporting   
+#     'CloudScore': True,
 
-    #'start_date': '2022-06-15',
-    #'end_date': '2023-09-15'
-}
+#     #'start_date': '2022-06-15',
+#     #'end_date': '2023-09-15'
+# }
 
-mosaic = period_mosaic(params)
+# mosaic = period_mosaic(params)
 
 # export_mosaic(params, mosaic)
 
@@ -664,27 +667,27 @@ sys.path
 
 import eoImage as eoIM
 
-sub_region = {
-    'type': 'Polygon',
-    'coordinates': [
-       [[-78.6303, 44.2113],         
-        [-77.0455, 44.2113], 
-        [-77.0455, 45.318], 
-        [-78.6303, 45.318], 
-        [-78.6303, 44.2113]]
-    ]
+params = {
+    'sensor': 'L8_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
+    'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
+    'year': 2022,                # An integer representing image acquisition year
+    'nbYears': -1,               # positive int for annual product, or negative int for monthly product
+    'months': [8],               # A list of integers represening one or multiple monthes     
+    'tile_names': ['tile42_922'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+    'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
+    'resolution': 400,            # Exporting spatial resolution    
+    'out_folder': 'D:/WorkSpace/test_xr_output',        # the folder name for exporting
+    'projection': 'EPSG:3979', 
+    
+    #'start_date': '2022-06-15',
+    #'end_date': '2022-09-15'
 }
 
 
-start_str    = '2019-07-01'
-end_str      = '2019-07-31'
-scale        = 100
-ssr_data     = eoIM.SSR_META_DICT['S2_SR']
-
     
-#mosaic = period_mosaic(ssr_data, sub_region, 'EPSG:3979', scale, start_str, end_str)
-mosaic = get_sub_mosaic(ssr_data, sub_region, 'EPSG:3979', scale, start_str, end_str)
-mosaic.to_netcdf('C:\\Work_documents\\stac_mosaic.nc')
+mosaic = period_mosaic(params)
+#mosaic = get_sub_mosaic(ssr_data, sub_region, 'EPSG:3979', scale, start_str, end_str)
+#mosaic.to_netcdf('C:\\Work_documents\\stac_mosaic.nc')
 #export_mosaic(mosaic, 'C:\\Work_documents\\stac_mosaic', scale, 'EPSG:3979')
 '''
 
