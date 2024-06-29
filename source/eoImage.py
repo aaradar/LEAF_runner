@@ -478,8 +478,8 @@ def apply_gain_offset(xrDS, SsrData, MaxRef, all_bands):
   if all_bands == True:
     return xrDS*gain + offset
   else:
-    band_names = SsrData['SIX_BANDS']      # Get the names of all optical bands
-    operation  = lambda x: (x*gain + offset).astype(np.float32)
+    band_names = SsrData['ALL_BANDS']         # Get the names of all optical bands
+    operation  = lambda x: (x*gain + offset)  #.astype(np.float32)
 
     return xrDS.assign(**{var: operation(xrDS[var]) for var in band_names})
 

@@ -259,7 +259,7 @@ def get_score_refers(ready_IC):
   #==========================================================================================================
   # create a median image from the ready Image collection
   #==========================================================================================================
-  median_img = ready_IC.median(dim='time').astype(np.float32)
+  median_img = ready_IC.median(dim='time')   #.astype(np.float32)
   print('\n<get_score_refers> median image = ', median_img)
   #==========================================================================================================
   # Extract separate bands from the median image, then calculate NDVI and modeled blue median band
@@ -269,7 +269,7 @@ def get_score_refers(ready_IC):
   nir = median_img.nir08
   sw2 = median_img.swir22
   
-  NDVI      = (nir - red)/(nir + red + 0.0001)  
+  NDVI = (nir - red)/(nir + red + 0.0001)  
   #print('\n\nNDVI = ', NDVI)
   model_blu = sw2*0.25
   
@@ -286,7 +286,7 @@ def get_score_refers(ready_IC):
 
 
 #############################################################################################################
-# Description: This function attaches a score band to each image within a xarray Dataset.
+# Description: This function attaches a score band to each image in a xarray Dataset.
 #
 # Note:        The given "masked_IC" may be either an image collection with time dimension or a single image
 #              without time dimension
@@ -295,14 +295,14 @@ def get_score_refers(ready_IC):
 # 
 #############################################################################################################
 def attach_score(SsrData, ready_IC, StartStr, EndStr):
-  '''Attaches a score band to each image within a xarray Dataset (similar to an image collection in GEE)
+  '''Attaches a score band to each image in a xarray Dataset, which is equivalent to an image collection in GEE
   '''
   #print('<attach_score> ready IC = ', ready_IC)
   #==========================================================================================================
   # Attach an empty layer (with all pixels equal to ZERO) to eath temporal item (an image here) in "ready_IC" 
   #==========================================================================================================
   zero_img = ready_IC[SsrData['BLU']]*0.0 
-  ready_IC[eoIM.pix_score] = zero_img.astype(np.float32)
+  ready_IC[eoIM.pix_score] = zero_img   #.astype(np.float32)
   
   #print('\n\n<attach_score> ready IC after adding empty pixel score = ', ready_IC)
   #print('\n\n<attach_score> all pixel score layers in ready_IC = ', ready_IC[eoIM.pix_score])
@@ -444,16 +444,20 @@ def spec_score(SsrData, inImg, median_blu, median_nir):
 # 
 #############################################################################################################
 def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr):
+  #==========================================================================================================
   # get all query conditions 
+  #==========================================================================================================
   query_conds = get_query_conditions(SsrData, StartStr, EndStr)
 
-  # use publically available stac link such as
+  #==========================================================================================================
+  # Get a catalog object from STAC catalog available to public
+  #==========================================================================================================
   #catalog = psc.client.Client.from_file(query_conds['catalog'], stac_io = stac_api_io)
   catalog = psc.client.Client.open(str(query_conds['catalog'])) 
 
-  #==================================================================================================
-  # Search and filter a image collection
-  #==================================================================================================  
+  #==========================================================================================================
+  # Search and filter a image collection within the catalog
+  #==========================================================================================================
   search_IC = catalog.search(collections = [str(query_conds['collection'])], 
                              intersects  = SubRegion,                            
                              datetime    = str(query_conds['timeframe']), 
@@ -461,18 +465,21 @@ def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr):
                              limit       = 200)
   
   items = list(search_IC.items())
-  print(f"Found: {len(items):d} datasets")
+  print(f"<get_sub_mosaic> Found: {len(items):d} images")
     
-  #==================================================================================================
-  # lazily combine items
-  #==================================================================================================
+  #==========================================================================================================
+  # Load all the STAC items as an xarray.Dataset object on a local machine
+  #==========================================================================================================
   mybbox = eoUs.get_region_bbox(SubRegion)
   print('<get_sub_mosaic> The bbox of the given region = ', mybbox)
+  #chunk_size = get_chunk_size()
 
   raw_IC = odc.stac.load(search_IC.items(),
                         bands  = query_conds['bands'],
                         groupby='solar_day',  #For lower latitude scenses, save a lot memories
+                        dtype = 'float32',
                         chunks = {'x': 1000, 'y': 1000},
+                        fail_on_error = False,
                         crs    = ProjStr, 
                         bbox   = mybbox,
                         resolution = Scale)
