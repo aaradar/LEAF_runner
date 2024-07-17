@@ -679,8 +679,16 @@ def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr, AngleDB
   #========================================================================================================== 
   criteria   = get_query_conditions(SsrData, StartStr, EndStr)
   stac_items = search_STAC_Catalog(SubRegion, criteria, 500, AngleDB, False)
+   
+  nb_items = len(stac_items) 
+  print(f"<get_sub_mosaic> Found: {nb_items} images for submosaic.")
 
-  print(f"<get_sub_mosaic> Found: {len(stac_items):d} images for submosaic.")
+  print("\n<get_sub_mosaic> Timestamps in stac_items:")  
+  for item in stac_items:
+    print(f'{item.datetime}, {item.properties['grid:code']}')
+
+  if nb_items < 2:
+    return None
   
   #==========================================================================================================
   # 
@@ -692,10 +700,6 @@ def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr, AngleDB
                        crs    = ProjStr, 
                        #bbox   = mybbox,
                        resolution = Scale)
-  
-  print("\n<get_sub_mosaic> Timestamps in stac_items:")  
-  for item in stac_items:
-    print(item.datetime)
 
   #==========================================================================================================
   # Actually load all data from a lazy-loaded dataset into in-memory Numpy arrays
@@ -964,15 +968,16 @@ def period_mosaic(inParams, DB_fullpath = ''):
       sub_polygon = {'type': 'Polygon',  'coordinates': [sub_region] }
 
       sub_mosaic = get_sub_mosaic(SsrData, sub_polygon, ProjStr, Scale, StartStr, EndStr, angle_DB, extra_bands)
-    
-      #sub_mosaic = attach_score(sub_mosaic)
-      max_spec_val = xr.apply_ufunc(np.maximum, sub_mosaic[SsrData['BLU']], sub_mosaic[SsrData['NIR']])
-      sub_mosaic = sub_mosaic.where(max_spec_val > 0)    
 
-      # Fill the gaps/missing pixels in "base_img" with valid pixels in "sub_mosaic" 
-      base_img = base_img.combine_first(sub_mosaic)
-      sub_mosaic_stop = time.time()
-    
+      if sub_mosaic != None:
+        #sub_mosaic = attach_score(sub_mosaic)
+        max_spec_val = xr.apply_ufunc(np.maximum, sub_mosaic[SsrData['BLU']], sub_mosaic[SsrData['NIR']])
+        sub_mosaic = sub_mosaic.where(max_spec_val > 0)    
+
+        # Fill the gaps/missing pixels in "base_img" with valid pixels in "sub_mosaic" 
+        base_img = base_img.combine_first(sub_mosaic)
+
+      sub_mosaic_stop = time.time()    
       sub_mosaic_time = (sub_mosaic_stop - sub_mosaic_start)/60
       print('\n<<<<<<<<<< Complete %2dth sub mosaic, elapsed time = %6.2f minutes>>>>>>>>>'%(count, sub_mosaic_time))
       count += 1
