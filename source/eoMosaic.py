@@ -918,8 +918,8 @@ def get_tile_submosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Sca
   xrDS[eoIM.pix_score] = xrDS[SsrData['BLU']]*0
   
   xrDS['time'] = pd.to_datetime(xrDS['time'].values)
-  xrDS[eoIM.pix_date] = xr.DataArray(xrDS['time'].dt.dayofyear, dims=['time'])
-  xrDS['time_index']  = xr.DataArray(range(0, len(time_values)), dims=['time'])
+  xrDS[eoIM.pix_date] = xr.DataArray(np.array(xrDS['time'].dt.dayofyear, dtype='uint16'), dims=['time'])
+  xrDS['time_index']  = xr.DataArray(np.array(range(0, len(time_values)), dtype='uint8'), dims=['time'])
   
   #==========================================================================================================
   # Apply default pixel mask to each of the images
@@ -1238,7 +1238,7 @@ def new_period_mosaic(inParams, DB_fullpath = ''):
   # Loop through each unique tile name to generate submosaic 
   #==========================================================================================================  
   unique_tiles = get_unique_tile_names(stac_items)  #Get all unique tile names  
-  print('\n<<<<<< The number of unique tiles = %d >>>>>>>'%(unique_tiles))  
+  print('\n<<<<<< The number of unique tiles = %d >>>>>>>'%(len(unique_tiles)))  
 
   count = 1
   for tile in unique_tiles:
