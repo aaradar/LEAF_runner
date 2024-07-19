@@ -586,23 +586,38 @@ def attach_Date(xrItem):
 #                                            for harminized Landsat Sentinel-2 images
 #                    2024-May-28  Lixin Sun  Converted for odc-stac and xarray application
 #############################################################################################################
-def attach_AngleBands(xrDS, SsrData):
+def attach_AngleBands(xrDS, Items):
   '''Attaches three angle bands to a satallite SURFACE REFLECTANCE image
   Args:    
     xrDS(xr Dateset): A xarray dataset object (a single image);
-    SsrData(Dictionary): A Dictionary containing metadata associated with a sensor and data unit.'''  
-
-  #================================================================================================
-  # Define a inner function for attaching imaging geometry angle bands to a LS or HLS image
-  #================================================================================================ 
-  sza     = 90.0 - xrDS.properties[SsrData['SZA']]
-  sza_rad = np.deg2rad(sza)
-  cosSZA  = np.cos(sza_rad)
+    SsrData(Dictionary): A Dictionary containing metadata associated with a sensor and data unit;
+    Items(List): A list of STAC items corresponding to the "xrDS".'''  
   
-  #xrDS['cosVZA'] = vza_rad.cos()
-  #xrDS['cosRAA'] = raa_rad.cos()
+  def get_sort_key(item):
+    # Example: sort by the datetime property
+    return item.datetime
+  
+  sorted_items = sorted(Items, key=get_sort_key)
+ 
+  cosSZAs = np.cos(np.radians([item.properties['sza'] for item in sorted_items]))
+  cosVZAs = np.cos(np.radians([item.properties['vza'] for item in sorted_items]))
+  cosRAAs = np.cos(np.radians([item.properties['saa'] - item.properties['vaa'] for item in sorted_items]))
 
-  return cosSZA
+  #==========================================================================================================
+  # Define a function to map indices to values
+  #==========================================================================================================
+  def map_indices_to_values(IndxBand, values):
+    indx_band = IndxBand.astype(np.int8)
+    return values[indx_band]
+  
+  #==========================================================================================================
+  # Apply the function using xarray.apply_ufunc
+  #==========================================================================================================
+  xrDS["cosSZA"] = xr.apply_ufunc(map_indices_to_values, xrDS["time_index"], cosSZAs).astype(np.float32)
+  xrDS["cosVZA"] = xr.apply_ufunc(map_indices_to_values, xrDS["time_index"], cosVZAs).astype(np.float32)
+  xrDS["cosRAA"] = xr.apply_ufunc(map_indices_to_values, xrDS["time_index"], cosRAAs).astype(np.float32)
+
+  return xrDS
 
 
 

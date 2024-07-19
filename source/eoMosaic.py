@@ -11,7 +11,7 @@ import pystac_client as psc
 import odc.stac
 import dask.diagnostics as ddiag
 import dask
-
+#from joblib import Parallel, delayed
 
 from collections import defaultdict
 
@@ -183,6 +183,8 @@ def get_one_tile_items(StacItems, TileName):
 # Description: This function returns a collection of images from a specified catalog and collection based on
 #              given spatial region, timeframe and filtering criteria. The returned image collection will be 
 #              stored in a xarray.Dataset structure.
+#
+# Note: (1) It seems that you can retrieve catalog info on AWS Landsat collection, but cannot access assets.
 #
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 # 
@@ -358,22 +360,26 @@ def get_sub_scene_IDs(AllSceneIDs, SubItems, SsrData):
 
 
 #############################################################################################################
-# Description: This function returns a base image covering entire spatial region.
+# Description: This function returns a base image that covers the entire spatial region od an interested area.
 #
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 #                    2024-Jul-17  Lixin Sun  Modified so that only unique and filtered STAC items will be
 #                                            returned 
 #############################################################################################################
 def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr, AngleDB = None):
+  '''
+  '''
   start_time = time.time()
 
   #==========================================================================================================
-  # Obtain query criteria, and then search a specified STAC catalog
+  # Obtain query criteria, and then search a specified STAC catalog based on the criteria
+  # Note: The third parameter (MaxImgs) for "search_STAC_Catalog" function cannot be too large. Otherwise,
+  #       a server internal error will be triggered.
   #==========================================================================================================
   criteria   = get_query_conditions(SsrData, StartStr, EndStr)
   stac_items = search_STAC_Catalog(Region, criteria, 100, True)
 
-  print(f"Found: {len(stac_items):d} datasets")
+  print(f"<get_base_Image> A total of {len(stac_items):d} items were found.")
   display_meta_assets(stac_items)
   
   #==========================================================================================================
@@ -441,9 +447,10 @@ def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr, AngleDB = 
   with ddiag.ProgressBar():
     ds_xr.load()
 
+  out_xrDS = ds_xr.isel(time=0).astype(np.int16)
   stop_time = time.time() 
   
-  return ds_xr.isel(time=0), filtered_items, (stop_time - start_time)/60
+  return out_xrDS, filtered_items, (stop_time - start_time)/60
 
 
 
@@ -868,8 +875,10 @@ def get_tile_submosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Sca
   #==========================================================================================================
   xrDS[eoIM.pix_score] = xrDS[SsrData['BLU']]*0
   
-  xrDS['time'] = pd.to_datetime(xrDS['time'].values)
-  xrDS[eoIM.pix_date] = xr.DataArray(np.array(xrDS['time'].dt.dayofyear, dtype='uint16'), dims=['time'])
+  #xrDS['time'] = pd.to_datetime(xrDS['time'].values)
+  time_datetime = pd.to_datetime(time_values)
+  doys = [date.timetuple().tm_yday for date in time_datetime]
+  xrDS[eoIM.pix_date] = xr.DataArray(np.array(doys, dtype='uint16'), dims=['time'])
   xrDS['time_index']  = xr.DataArray(np.array(range(0, len(time_values)), dtype='uint8'), dims=['time'])
   
   #==========================================================================================================
@@ -887,28 +896,36 @@ def get_tile_submosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Sca
   print('<get_sub_mosaic> Complete applying gain and offset, elapsed time = %6.2f minutes'%(rescale_time))
 
   #==========================================================================================================
-  # Note: calling "fillna" function before invaking "argmax" function is very important!!!
+  # Calculate compositing scores for every valid pixel in xarray dataset object 
   #==========================================================================================================
   xrDS, score_time = attach_score(SsrData, xrDS, StartStr, EndStr, eoIM.EXTRA_ANGLE)
 
   print('<get_sub_mosaic> Complete pixel scoring, elapsed time = %6.2f minutes'%(score_time)) 
 
   #================================================================================================
-  # Attach an additional bands as necessary to each image in the image collection
+  # Create a composite image based on compositing scores
+  # Note: calling "fillna" function before invaking "argmax" function is very important!!!
   #================================================================================================
-  '''
-  extra_code = int(ExtraBandCode)
-  if extra_code == eoIM.EXTRA_ANGLE:
-    xrDS = eoIM.attach_AngleBands(xrDS, SsrData)
-  elif extra_code == eoIM.EXTRA_NDVI:
-    xrDS = eoIM.attach_NDVIBand(xrDS, SsrData)
-  '''
-
   xrDS = xrDS.fillna(-0.0001)
   max_indices = xrDS[eoIM.pix_score].argmax(dim='time')
   sub_mosaic  = xrDS.isel(time=max_indices)  
+  
+  #================================================================================================
+  # Attach an additional bands as necessary 
+  #================================================================================================  
+  extra_code = int(ExtraBandCode)
+  if extra_code == eoIM.EXTRA_ANGLE:
+    sub_mosaic = eoIM.attach_AngleBands(sub_mosaic, TileItems)  
+  #elif extra_code == eoIM.EXTRA_NDVI:
+  #  xrDS = eoIM.attach_NDVIBand(xrDS, SsrData)
+  
+  #================================================================================================
+  # Remove 'time_index' and 'score' variables from submosaic 
+  #================================================================================================  
+  sub_mosaic = sub_mosaic.drop_vars("time_index")
+  sub_mosaic = sub_mosaic.drop_vars("score")
 
-  return (sub_mosaic*100)
+  return sub_mosaic
 
 
 
@@ -1038,7 +1055,7 @@ def new_period_mosaic(inParams, DB_fullpath = ''):
   
   mosaic_start = time.time()
   #==========================================================================================================
-  # Prepare required parameters
+  # Prepare required parameters and query criteria
   #==========================================================================================================
   params = eoPM.get_mosaic_params(inParams)
   
@@ -1053,34 +1070,32 @@ def new_period_mosaic(inParams, DB_fullpath = ''):
   Region  = eoPM.get_spatial_region(params)
   StartStr, EndStr = eoPM.get_time_window(params)  
 
-  extra_bands = eoIM.EXTRA_NONE
-  criteria    = get_query_conditions(SsrData, StartStr, EndStr)
+  criteria = get_query_conditions(SsrData, StartStr, EndStr)
 
   #==========================================================================================================
-  # Detect the existance of an imaging angle database
+  # Detect the existance of an imaging angle database, which is supposed to be generated from GEE
   #==========================================================================================================
-  angle_DB = pd.DataFrame(read_angleDB(DB_fullpath))
-  if angle_DB.empty == False:      
-    extra_bands = eoIM.EXTRA_ANGLE
+  angle_DB    = pd.DataFrame(read_angleDB(DB_fullpath))
+  extra_bands = eoIM.EXTRA_ANGLE if angle_DB.empty == False else eoIM.EXTRA_NONE
 
   #==========================================================================================================
-  # Create a base image that has full dimensions covering a specified spatial region
-  # From this base image, the spatial dimensions can be obtained.
+  # Create a base image that has full spatial dimensions covering ROI
   #==========================================================================================================
-  base_img, stac_items, used_time = get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr, angle_DB, )
+  base_img, stac_items, used_time = get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr, angle_DB)
   
   #==========================================================================================================
   # Attach necessary extra bands and then mask out all the pixels
   #==========================================================================================================
-  base_img[eoIM.pix_score] = base_img[SsrData['BLU']]
+  #base_img[eoIM.pix_score] = base_img[SsrData['BLU']]
+  #base_img[eoIM.pix_date]  = base_img[SsrData['BLU']]
   # Mask out all the pixels in each variable of "base_img", so they will treated as gap/missing pixels
-  base_img = base_img*0  
+  base_img = base_img*0
   base_img = base_img.where(base_img > 0)
   print('\n<period_mosaic> based mosaic image = ', base_img)
   print('\n<<<<<<<<<< Complete generating base image, elapsed time = %6.2f minutes>>>>>>>>>'%(used_time))  
 
   #==========================================================================================================
-  # Loop through each unique tile name to generate submosaic 
+  # Get a list of unique tile names and then loop through each unique tile to generate submosaic 
   #==========================================================================================================  
   unique_tiles = get_unique_tile_names(stac_items)  #Get all unique tile names  
   print('\n<<<<<< The number of unique tiles = %d >>>>>>>'%(len(unique_tiles)))  
@@ -1089,18 +1104,16 @@ def new_period_mosaic(inParams, DB_fullpath = ''):
   for tile in unique_tiles:
     sub_mosaic_start = time.time()
 
-    tile_items = get_one_tile_items(stac_items, tile) # Extract a list of items based on an unique tile name
-       
-    sub_mosaic = get_tile_submosaic(SsrData, tile_items, StartStr, EndStr, criteria['bands'], ProjStr, Scale, extra_bands)
-    print('\n\n<period_mosaic> sub mosaic =', sub_mosaic)
+    one_tile_items  = get_one_tile_items(stac_items, tile) # Extract a list of items based on an unique tile name       
+    one_tile_mosaic = get_tile_submosaic(SsrData, one_tile_items, StartStr, EndStr, criteria['bands'], ProjStr, Scale, extra_bands)
+    print('\n\n<period_mosaic> sub mosaic =', one_tile_mosaic)
 
-    if sub_mosaic != None:
-      #sub_mosaic = attach_score(sub_mosaic)
-      max_spec_val = xr.apply_ufunc(np.maximum, sub_mosaic[SsrData['BLU']], sub_mosaic[SsrData['NIR']])
-      sub_mosaic   = sub_mosaic.where(max_spec_val > 0)
+    if one_tile_mosaic != None:
+      max_spec_val    = xr.apply_ufunc(np.maximum, one_tile_mosaic[SsrData['BLU']], one_tile_mosaic[SsrData['NIR']])
+      one_tile_mosaic = one_tile_mosaic.where(max_spec_val > 0)
 
       # Fill the gaps/missing pixels in "base_img" with valid pixels in "sub_mosaic" 
-      base_img = base_img.combine_first(sub_mosaic)
+      base_img = base_img.combine_first(one_tile_mosaic)
       print('\n\n<period_mosaic> base image after merging a submosaic =', base_img)
 
     sub_mosaic_stop = time.time()    
@@ -1108,13 +1121,11 @@ def new_period_mosaic(inParams, DB_fullpath = ''):
     print('\n<<<<<<<<<< Complete %2dth sub mosaic, elapsed time = %6.2f minutes>>>>>>>>>'%(count, sub_mosaic_time))
     count += 1
     
-  mosaic = base_img
-
   mosaic_stop = time.time()
   mosaic_time = (mosaic_stop - mosaic_start)/60
   print('\n\n<<<<<<<<<< The total elapsed time for generating the mosaic = % 6.2f minutes>>>>>>>>>'%(mosaic_time))
   
-  return mosaic
+  return base_img
   
 
 
@@ -1176,7 +1187,6 @@ def export_mosaic(inParams, inMosaic):
     filename = f"{filePrefix}_mosaic_{spa_scale}m.tif"
     output_path = os.path.join(dir_path, filename)
     rio_mosaic.to_netcdf(output_path)
-
 
 
 
