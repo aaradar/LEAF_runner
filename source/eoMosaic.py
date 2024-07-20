@@ -564,7 +564,6 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr, ExtraBandCode):
   '''Attaches a score band to each image in a xarray Dataset, which is equivalent to an image collection in GEE
   '''
   #print('<attach_score> ready IC = ', ready_IC)
-  
   #print('\n\n<attach_score> ready IC after adding empty pixel score = ', ready_IC)
   #print('\n\n<attach_score> all pixel score layers in ready_IC = ', ready_IC[eoIM.pix_score])
   #==========================================================================================================
@@ -586,7 +585,11 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr, ExtraBandCode):
     spec_score = get_spec_score(SsrData, img, median_blu, median_nir)     
     ready_IC[eoIM.pix_score][i, :,:] = spec_score * time_score 
    
-  Parallel(n_jobs=2, require='sharedmem')(delayed(score_one_img)(i, time) for i, time in enumerate(ready_IC.time.values))  
+  Parallel(n_jobs=4, require='sharedmem')(delayed(score_one_img)(i, time) for i, time in enumerate(ready_IC.time.values))  
+
+  stop = time.time() 
+
+  return ready_IC, (stop - start)/60.0
 
   #==========================================================================================================
   # Modify the empty layer with time and spectral scores  
@@ -615,9 +618,7 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr, ExtraBandCode):
     #  ready_IC['cosSZA'][i, :,:] = 
   '''
 
-  stop = time.time() 
 
-  return ready_IC, (stop - start)/60.0
 
 
 
