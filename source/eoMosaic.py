@@ -11,7 +11,8 @@ import pystac_client as psc
 import odc.stac
 import dask.diagnostics as ddiag
 import dask
-#from joblib import Parallel, delayed
+from joblib import Parallel
+from joblib import delayed
 
 from collections import defaultdict
 
@@ -447,10 +448,10 @@ def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr, AngleDB = 
   with ddiag.ProgressBar():
     ds_xr.load()
 
-  out_xrDS = ds_xr.isel(time=0).astype(np.int16)
+  out_xrDS = ds_xr.isel(time=0)
   stop_time = time.time() 
   
-  return out_xrDS, filtered_items, (stop_time - start_time)/60
+  return out_xrDS.astype(np.int16), filtered_items, (stop_time - start_time)/60
 
 
 
@@ -576,10 +577,21 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr, ExtraBandCode):
   median     = get_score_refers(ready_IC)
   median_blu = median[SsrData['BLU']]
   median_nir = median[SsrData['NIR']]
+  
+  def score_one_img(i, time):
+    timestamp  = pd.Timestamp(time).to_pydatetime()
+    time_score = get_time_score(timestamp, midDate, SsrData['SSR_CODE'])   
+    
+    img = ready_IC.isel(time=i)
+    spec_score = get_spec_score(SsrData, img, median_blu, median_nir)     
+    ready_IC[eoIM.pix_score][i, :,:] = spec_score * time_score 
+   
+  Parallel(n_jobs=2, require='sharedmem')(delayed(score_one_img)(i, time) for i, time in enumerate(ready_IC.time.values))  
 
   #==========================================================================================================
   # Modify the empty layer with time and spectral scores  
   #==========================================================================================================
+  '''
   for i, time_value in enumerate(ready_IC.time.values):
     #print(f"<get_sub_mosaic> Index: {i}, Timestamp: {time_value}")    
     #--------------------------------------------------------------------------------------------------------
@@ -591,7 +603,7 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr, ExtraBandCode):
     #--------------------------------------------------------------------------------------------------------
     # Multiply with spectral score
     #--------------------------------------------------------------------------------------------------------
-    img = ready_IC.isel(time=i)     
+    img = ready_IC.isel(time=i)
     #img = eoIM.apply_default_mask(img, SsrData)
 
     spec_score = get_spec_score(SsrData, img, median_blu, median_nir) 
@@ -601,6 +613,7 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr, ExtraBandCode):
 
     #if ExtraBandCode == eoIM.EXTRA_ANGLE:       
     #  ready_IC['cosSZA'][i, :,:] = 
+  '''
 
   stop = time.time() 
 
@@ -1086,8 +1099,14 @@ def new_period_mosaic(inParams, DB_fullpath = ''):
   #==========================================================================================================
   # Attach necessary extra bands and then mask out all the pixels
   #==========================================================================================================
-  #base_img[eoIM.pix_score] = base_img[SsrData['BLU']]
-  #base_img[eoIM.pix_date]  = base_img[SsrData['BLU']]
+  blue_band = base_img[SsrData['BLU']]
+  
+  base_img[eoIM.pix_date] = blue_band
+  base_img["cosSZA"]      = blue_band
+  base_img["cosVZA"]      = blue_band
+  base_img["cosRAA"]      = blue_band
+  #base_img[eoIM.pix_score] = blue_band
+
   # Mask out all the pixels in each variable of "base_img", so they will treated as gap/missing pixels
   base_img = base_img*0
   base_img = base_img.where(base_img > 0)
@@ -1099,14 +1118,11 @@ def new_period_mosaic(inParams, DB_fullpath = ''):
   #==========================================================================================================  
   unique_tiles = get_unique_tile_names(stac_items)  #Get all unique tile names  
   print('\n<<<<<< The number of unique tiles = %d >>>>>>>'%(len(unique_tiles)))  
-
-  count = 1
-  for tile in unique_tiles:
-    sub_mosaic_start = time.time()
-
+  
+  '''
+  def ingest_one_tile(tile):
     one_tile_items  = get_one_tile_items(stac_items, tile) # Extract a list of items based on an unique tile name       
     one_tile_mosaic = get_tile_submosaic(SsrData, one_tile_items, StartStr, EndStr, criteria['bands'], ProjStr, Scale, extra_bands)
-    print('\n\n<period_mosaic> sub mosaic =', one_tile_mosaic)
 
     if one_tile_mosaic != None:
       max_spec_val    = xr.apply_ufunc(np.maximum, one_tile_mosaic[SsrData['BLU']], one_tile_mosaic[SsrData['NIR']])
@@ -1114,7 +1130,26 @@ def new_period_mosaic(inParams, DB_fullpath = ''):
 
       # Fill the gaps/missing pixels in "base_img" with valid pixels in "sub_mosaic" 
       base_img = base_img.combine_first(one_tile_mosaic)
-      print('\n\n<period_mosaic> base image after merging a submosaic =', base_img)
+  
+  #Parallel(n_jobs=1, require='sharedmem')(delayed(ingest_one_tile)(tile, base_img) for tile in unique_tiles) 
+  '''
+
+  count = 1
+  for tile in unique_tiles:
+    sub_mosaic_start = time.time()
+    
+    #ingest_one_tile(tile)
+    one_tile_items  = get_one_tile_items(stac_items, tile) # Extract a list of items based on an unique tile name       
+    one_tile_mosaic = get_tile_submosaic(SsrData, one_tile_items, StartStr, EndStr, criteria['bands'], ProjStr, Scale, extra_bands)
+
+    if one_tile_mosaic != None:
+      max_spec_val    = xr.apply_ufunc(np.maximum, one_tile_mosaic[SsrData['BLU']], one_tile_mosaic[SsrData['NIR']])
+      one_tile_mosaic = one_tile_mosaic.where(max_spec_val > 0)
+
+      # Fill the gaps/missing pixels in "base_img" with valid pixels in "sub_mosaic" 
+      base_img = base_img.combine_first(one_tile_mosaic)
+
+    print('\n\n<period_mosaic> base image after merging a submosaic =', base_img)
 
     sub_mosaic_stop = time.time()    
     sub_mosaic_time = (sub_mosaic_stop - sub_mosaic_start)/60
