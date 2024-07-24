@@ -474,6 +474,8 @@ def calculate_angles(sat_pos, pixel_pos):
 
 #############################################################################################################
 # Description: This function returns average view zenith and azimuth angles
+# 
+# Note: This function does work since it is hard to obtain dynamic TLE data of a EO satellite
 #
 # Revision history:  2024-Jul-22  Lixin Sun  Initial creation
 #

@@ -576,42 +576,41 @@ def attach_Date(xrItem):
 
 
 #############################################################################################################
-# Description: This function adds three angle bands to a satellite SURFACE reflectance image
+# Description: This function appends three imaging geometry angle bands to a specified mosaic image stored as 
+#              an xarray dataset object. 
 #
-# Note:        This function is mainly used by LEAF tool
+# Note:        This function assumes "xrDS" was created using the STAC items in "StacItems".
 #  
-# Revision history:  2021-May-19  Lixin Sun  Initial creation
-#                    2021-May-10  Lixin Sun  Converted from Lixin's JavaScript code
-#                    2022-Jun-22  Lixin Sun  Removed scaling factor
-#                    2023-Nov-30  Lixin Sun  Fixed a bug for Landsat SR case and added solution 
-#                                            for harminized Landsat Sentinel-2 images
-#                    2024-May-28  Lixin Sun  Converted for odc-stac and xarray application
+# Revision history:  2024-Jul-19  Lixin Sun  Initial creation
+#
 #############################################################################################################
-def attach_AngleBands(xrDS, Items):
+def attach_AngleBands(xrDS, StacItems):
   '''Attaches three angle bands to a satallite SURFACE REFLECTANCE image
   Args:    
     xrDS(xr Dateset): A xarray dataset object (a single image);
-    SsrData(Dictionary): A Dictionary containing metadata associated with a sensor and data unit;
-    Items(List): A list of STAC items corresponding to the "xrDS".'''  
-  
+    StacItems(List): A list of STAC items corresponding to the "xrDS".'''  
+  #==========================================================================================================
+  # Sort the provided STAC items to match the image sequence in "xrDS"
+  #==========================================================================================================  
   def get_sort_key(item):
-    # Example: sort by the datetime property
     return item.datetime
   
-  sorted_items = sorted(Items, key=get_sort_key)
+  sorted_items = sorted(StacItems, key=get_sort_key)
  
   for item in sorted_items:
     eoIM.get_Img_Angles(item)
     print(item)
 
   #eoUs.get_average_VAs('S2A', TimeStamp, CentreLat, CentreLon, CentreAlt)
-
+  #==========================================================================================================
+  # Create three lists to store the cosine values of the imaging geometry angles. 
+  #==========================================================================================================  
   cosSZAs = np.cos(np.radians([item.properties['sza'] for item in sorted_items]))
   cosVZAs = np.cos(np.radians([item.properties['vza'] for item in sorted_items]))
   cosRAAs = np.cos(np.radians([item.properties['saa'] - item.properties['vaa'] for item in sorted_items]))
 
   #==========================================================================================================
-  # Define a function to map indices to values
+  # Define a function to map indices to the angle cosine values
   #==========================================================================================================
   def map_indices_to_values(IndxBand, values):
     indx_band = IndxBand.astype(np.int8)

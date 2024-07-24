@@ -469,7 +469,7 @@ def get_sub_scene_IDs(AllSceneIDs, SubItems, SsrData):
 #                    2024-Jul-17  Lixin Sun  Modified so that only unique and filtered STAC items will be
 #                                            returned 
 #############################################################################################################
-def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr, AngleDB = None):
+def get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr):
   '''
   '''
   start_time = time.time()
@@ -866,21 +866,6 @@ def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr, ExtraBa
   xrDS[eoIM.pix_date] = xr.DataArray(xrDS['time'].dt.dayofyear, dims=['time'])
   xrDS['time_index']  = xr.DataArray(range(0, len(time_values)), dims=['time'])
 
-  '''
-  def attach_S2_angle_bands():
-    vza = Image.getNumber(SsrData['VZA'])
-    sza = Image.getNumber(SsrData['SZA'])    
-
-    vza_rad = ee.Image.constant(vza).multiply(rad)
-    sza_rad = ee.Image.constant(sza).multiply(rad)
-
-    raa     = Image.getNumber(SsrData['SAA']).subtract(Image.getNumber(SsrData['VAA']))
-    raa_rad = ee.Image.constant(raa.multiply(rad))
-    
-    return (Image.addBands(vza_rad.cos().rename(['cosVZA'])) \
-                 .addBands(sza_rad.cos().rename(['cosSZA'])) \
-                 .addBands(raa_rad.cos().rename(['cosRAA'])))  
-  '''
   #==========================================================================================================
   # Apply default pixel mask to each of the images
   #==========================================================================================================
@@ -896,23 +881,15 @@ def get_sub_mosaic(SsrData, SubRegion, ProjStr, Scale, StartStr, EndStr, ExtraBa
   print('<get_sub_mosaic> Complete applying gain and offset, elapsed time = %6.2f minutes'%(rescale_time))
 
   #==========================================================================================================
-  # Note: calling "fillna" function before invaking "argmax" function is very important!!!
+  # Note: calling "fillna" function before calling "argmax" function is very important!!!
   #==========================================================================================================
   xrDS, score_time = attach_score(SsrData, xrDS, StartStr, EndStr, eoIM.EXTRA_ANGLE)
 
   print('<get_sub_mosaic> Complete pixel scoring, elapsed time = %6.2f minutes'%(score_time)) 
 
-  #================================================================================================
+  #==========================================================================================================
   # Attach an additional bands as necessary to each image in the image collection
-  #================================================================================================
-  '''
-  extra_code = int(ExtraBandCode)
-  if extra_code == eoIM.EXTRA_ANGLE:
-    xrDS = eoIM.attach_AngleBands(xrDS, SsrData)
-  elif extra_code == eoIM.EXTRA_NDVI:
-    xrDS = eoIM.attach_NDVIBand(xrDS, SsrData)
-  '''
-
+  #==========================================================================================================
   xrDS = xrDS.fillna(-0.0001)
   max_indices = xrDS[eoIM.pix_score].argmax(dim='time')
   sub_mosaic  = xrDS.isel(time=max_indices)
@@ -994,156 +971,47 @@ def get_tile_submosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Sca
 
   print('<get_sub_mosaic> Complete pixel scoring, elapsed time = %6.2f minutes'%(score_time)) 
 
-  #================================================================================================
+  #==========================================================================================================
   # Create a composite image based on compositing scores
   # Note: calling "fillna" function before invaking "argmax" function is very important!!!
-  #================================================================================================
+  #==========================================================================================================
   xrDS = xrDS.fillna(-0.0001)
   max_indices = xrDS[eoIM.pix_score].argmax(dim='time')
   sub_mosaic  = xrDS.isel(time=max_indices)  
   
-  #================================================================================================
+  #==========================================================================================================
   # Attach an additional bands as necessary 
-  #================================================================================================  
+  #==========================================================================================================
   extra_code = int(ExtraBandCode)
   if extra_code == eoIM.EXTRA_ANGLE:
     sub_mosaic = eoIM.attach_AngleBands(sub_mosaic, TileItems)  
   #elif extra_code == eoIM.EXTRA_NDVI:
   #  xrDS = eoIM.attach_NDVIBand(xrDS, SsrData)
   
-  #================================================================================================
+  #==========================================================================================================
   # Remove 'time_index' and 'score' variables from submosaic 
-  #================================================================================================  
+  #==========================================================================================================
   sub_mosaic = sub_mosaic.drop_vars("time_index")
   sub_mosaic = sub_mosaic.drop_vars("score")
 
   return sub_mosaic
 
-
-
+  
 
 
 
 #############################################################################################################
-# Description: This function returns a mosaic using the image acquired during 
+# Description: This function returns a composite image generated from images acquired over a specified time 
+#              period.
 # 
-# Note: If "DB_fullpath" parameter is provided, then it indicates that imaging angles need to be included in
-#       composite image.
-#
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
-#                    2024-Jul-15  Lixin Sun  Added the 2nd input parameter (DB_fullpath), which indicates
-#                                            if imaging angles need to be included in composite image.
+#                    2024-Jul-20  Lixin Sun  Modified to generate the final composite image tile by tile.
 #############################################################################################################
-def period_mosaic(inParams, DB_fullpath = ''):
+def period_mosaic(inParams, ExtraBands):
   '''
     Args:
-      inParams(dictionary): A dictionary containing all required parameters;
-      DB_fullpath(String): A full path to a geometry angle database file in .CSV format.'''
-  
-  mosaic_start = time.time()
-  #==========================================================================================================
-  # Prepare required parameters
-  #==========================================================================================================
-  params = eoPM.get_mosaic_params(inParams)
-  
-  if params == None:
-    print('<period_mosaic> Cannot create a mosaic image due to invalid input parameter!')
-    return None
-  
-  SsrData = eoIM.SSR_META_DICT[str(params['sensor']).upper()]
-  ProjStr = str(params['projection'])  
-  Scale   = int(params['resolution'])
-
-  Region  = eoPM.get_spatial_region(params)
-  StartStr, EndStr = eoPM.get_time_window(params)  
-
-  #==========================================================================================================
-  # Create a base image that has full dimensions covering a specified spatial region
-  # From this base image, the spatial dimensions can be obtained.
-  #==========================================================================================================
-  base_img, used_time = get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr)
-  
-  print('\n<<<<<<<<<< Complete generating base image, elapsed time = %6.2f minutes>>>>>>>>>'%(used_time))  
-  
-  #==========================================================================================================
-  # Determine if the final mosaic image is generated as a whole directly or by merging a number of submosaics
-  #==========================================================================================================
-  nSub = get_sub_numb(base_img, 1000)
-  print('<period_mosaic> The number of sub mosaics = ', nSub)
-  extra_bands = eoIM.EXTRA_NONE
-
-  if nSub == 1:
-    # The final mosaic is generated as a whole directly 
-    # This option does not work!!! will get error message "APIError: {"message": "Internal server error"}"
-    mosaic = get_sub_mosaic(SsrData, Region, ProjStr, Scale, StartStr, EndStr)
-  else:
-    #--------------------------------------------------------------------------------------------------------
-    # Detect the existance of an imaging angle database
-    #--------------------------------------------------------------------------------------------------------
-    angle_DB = pd.DataFrame(read_angleDB(DB_fullpath))
-    if angle_DB.empty == False:      
-      extra_bands = eoIM.EXTRA_ANGLE
-
-    #--------------------------------------------------------------------------------------------------------
-    # Create the final mosaic by merging a number of submosaics
-    #--------------------------------------------------------------------------------------------------------
-    base_img = base_img*0  
-    base_img[eoIM.pix_score] = base_img[SsrData['BLU']]
-
-    # Mask out all the pixels in each variable of "base_img", so they will treated as gap/missing pixels
-    base_img = base_img.where(base_img > 0)
-    print('\n<period_mosaic> based mosaic image = ', base_img)
-
-    sub_regions = eoUs.divide_region(Region, nSub)
-    print('<period_mosaic> Divided sub-regions = ', sub_regions)
-    count = 1
-
-    for sub_region in sub_regions:
-      sub_mosaic_start = time.time()
-      print('\n\n<period_mosaic> Create a sub-mosaic for ', sub_region)
-      sub_polygon = {'type': 'Polygon',  'coordinates': [sub_region] }
-
-      sub_mosaic = get_sub_mosaic(SsrData, sub_polygon, ProjStr, Scale, StartStr, EndStr, angle_DB, extra_bands)
-
-      if sub_mosaic != None:
-        #sub_mosaic = attach_score(sub_mosaic)
-        max_spec_val = xr.apply_ufunc(np.maximum, sub_mosaic[SsrData['BLU']], sub_mosaic[SsrData['NIR']])
-        sub_mosaic = sub_mosaic.where(max_spec_val > 0)    
-
-        # Fill the gaps/missing pixels in "base_img" with valid pixels in "sub_mosaic" 
-        base_img = base_img.combine_first(sub_mosaic)
-
-      sub_mosaic_stop = time.time()    
-      sub_mosaic_time = (sub_mosaic_stop - sub_mosaic_start)/60
-      print('\n<<<<<<<<<< Complete %2dth sub mosaic, elapsed time = %6.2f minutes>>>>>>>>>'%(count, sub_mosaic_time))
-      count += 1
-    
-    mosaic = base_img
-
-  mosaic_stop = time.time()
-  mosaic_time = (mosaic_stop - mosaic_start)/60
-  print('\n\n<<<<<<<<<< The total elapsed time for generating the mosaic = % 6.2f minutes>>>>>>>>>'%(mosaic_time))
-  
-  return mosaic
-  
-
-
-
-#############################################################################################################
-# Description: This function returns a mosaic using the image acquired during 
-# 
-# Note: If "DB_fullpath" parameter is provided, then it indicates that imaging angles need to be included in
-#       composite image.
-#
-# Revision history:  2024-May-24  Lixin Sun  Initial creation
-#                    2024-Jul-15  Lixin Sun  Added the 2nd input parameter (DB_fullpath), which indicates
-#                                            if imaging angles need to be included in composite image.
-#############################################################################################################
-def new_period_mosaic(inParams, DB_fullpath = ''):
-  '''
-    Args:
-      inParams(dictionary): A dictionary containing all required parameters;
-      DB_fullpath(String): A full path to a geometry angle database file in .CSV format.'''
+      inParams(dictionary): A dictionary containing all necessary execution parameters;
+      ExtraBands(int): An integer indicating the additional bands to be appended to the resultant composite image.'''
   
   mosaic_start = time.time()
   #==========================================================================================================
@@ -1165,15 +1033,9 @@ def new_period_mosaic(inParams, DB_fullpath = ''):
   criteria = get_query_conditions(SsrData, StartStr, EndStr)
 
   #==========================================================================================================
-  # Detect the existance of an imaging angle database, which is supposed to be generated from GEE
-  #==========================================================================================================
-  angle_DB    = pd.DataFrame(read_angleDB(DB_fullpath))
-  extra_bands = eoIM.EXTRA_ANGLE if angle_DB.empty == False else eoIM.EXTRA_NONE
-
-  #==========================================================================================================
   # Create a base image that has full spatial dimensions covering ROI
   #==========================================================================================================
-  base_img, stac_items, used_time = get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr, angle_DB)
+  base_img, stac_items, used_time = get_base_Image(SsrData, Region, ProjStr, Scale, StartStr, EndStr)
   
   #==========================================================================================================
   # Attach necessary extra bands and then mask out all the pixels
@@ -1181,10 +1043,12 @@ def new_period_mosaic(inParams, DB_fullpath = ''):
   blue_band = base_img[SsrData['BLU']]
   
   base_img[eoIM.pix_date] = blue_band
-  base_img["cosSZA"]      = blue_band
-  base_img["cosVZA"]      = blue_band
-  base_img["cosRAA"]      = blue_band
-  #base_img[eoIM.pix_score] = blue_band
+
+  if ExtraBands == eoIM.EXTRA_ANGLE:
+    base_img["cosSZA"]      = blue_band
+    base_img["cosVZA"]      = blue_band
+    base_img["cosRAA"]      = blue_band
+    #base_img[eoIM.pix_score] = blue_band
 
   # Mask out all the pixels in each variable of "base_img", so they will treated as gap/missing pixels
   base_img = base_img*0
@@ -1219,7 +1083,7 @@ def new_period_mosaic(inParams, DB_fullpath = ''):
     
     #ingest_one_tile(tile)
     one_tile_items  = get_one_tile_items(stac_items, tile) # Extract a list of items based on an unique tile name       
-    one_tile_mosaic = get_tile_submosaic(SsrData, one_tile_items, StartStr, EndStr, criteria['bands'], ProjStr, Scale, extra_bands)
+    one_tile_mosaic = get_tile_submosaic(SsrData, one_tile_items, StartStr, EndStr, criteria['bands'], ProjStr, Scale, ExtraBands)
 
     if one_tile_mosaic != None:
       max_spec_val    = xr.apply_ufunc(np.maximum, one_tile_mosaic[SsrData['BLU']], one_tile_mosaic[SsrData['NIR']])
@@ -1241,7 +1105,6 @@ def new_period_mosaic(inParams, DB_fullpath = ''):
   
   return base_img
   
-
 
 
 
@@ -1321,7 +1184,7 @@ params = {
     #'end_date': '2022-09-15'
 }
 
-mosaic = new_period_mosaic(params, 'C:\\Work_documents\\scene_geo_angles\\tile42_geo_angles_2022_Summer.csv')
+mosaic = period_mosaic(params, eoIM.EXTRA_ANGLE)
 
 # export_mosaic(params, mosaic)
 '''
