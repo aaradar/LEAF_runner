@@ -676,17 +676,26 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr, ExtraBandCode):
   median     = get_score_refers(ready_IC)
   median_blu = median[SsrData['BLU']]
   median_nir = median[SsrData['NIR']]
-  
-  '''
-  def score_one_img(i, T):
+    
+  def image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir):
     timestamp  = pd.Timestamp(T).to_pydatetime()
     time_score = get_time_score(timestamp, midDate, SsrData['SSR_CODE'])   
     
     img = ready_IC.isel(time=i)
-    spec_score = get_spec_score(SsrData, img, median_blu, median_nir)     
-    ready_IC[eoIM.pix_score][i, :,:] = spec_score * time_score 
+    spec_score = get_spec_score(SsrData, img, median_blu, median_nir)
+    
+    #ready_IC[eoIM.pix_score][i, :,:] = spec_score * time_score 
+    return i, spec_score * time_score
+  
+  time_vals = list(ready_IC.time.values)
+  with concurrent.futures.ProcessPoolExecutor() as executor:
+    futures = [executor.submit(image_score, i, T, ready_IC, midDate, SsrData, median_blu, median_nir) for i, T in enumerate(time_vals)]
+    
+    for future in concurrent.futures.as_completed(futures):
+        i, score = future.result()
+        ready_IC[eoIM.pix_score][i, :,:] = score
+
   '''
-   
   for i, T in enumerate(ready_IC.time.values):
     #score_one_img(i, T)
     timestamp  = pd.Timestamp(T).to_pydatetime()
@@ -695,8 +704,7 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr, ExtraBandCode):
     img = ready_IC.isel(time=i)
     spec_score = get_spec_score(SsrData, img, median_blu, median_nir)     
     ready_IC[eoIM.pix_score][i, :,:] = spec_score * time_score 
-
-  #Parallel(n_jobs=-1, require='sharedmem')(delayed(score_one_img)(i, time) for i, time in enumerate(ready_IC.time.values))  
+  '''  
 
   stop = time.time() 
 
