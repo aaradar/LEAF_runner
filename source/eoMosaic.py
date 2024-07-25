@@ -15,6 +15,7 @@ import dask.diagnostics as ddiag
 import dask
 from joblib import Parallel
 from joblib import delayed
+import concurrent.futures
 
 from collections import defaultdict
 
@@ -263,19 +264,35 @@ def ingest_Geo_Angles(StacItems):
   if nItems < 1:
     return None
   
-  #==========================================================================================================
-  # 
-  #==========================================================================================================
-  out_items = [] 
-  for item in StacItems:
+  def process_item(item):
     view_angles = get_View_angles(item)
     
     item.properties['sza'] = 90.0 - item.properties['view:sun_elevation']
     item.properties['saa'] = item.properties['view:sun_azimuth']
     item.properties['vza'] = view_angles['vza']
     item.properties['vaa'] = view_angles['vaa']
+    
+    return item
+  
+  out_items = []
+  with concurrent.futures.ThreadPoolExecutor() as executor:
+    futures = [executor.submit(process_item, item) for item in StacItems]
+    for future in concurrent.futures.as_completed(futures):
+      out_items.append(future.result())
 
-    out_items.append(item)
+  #==========================================================================================================
+  # 
+  #==========================================================================================================  
+  #out_items = [] 
+  #for item in StacItems:
+  #  view_angles = get_View_angles(item)
+    
+  #  item.properties['sza'] = 90.0 - item.properties['view:sun_elevation']
+  #  item.properties['saa'] = item.properties['view:sun_azimuth']
+  #  item.properties['vza'] = view_angles['vza']
+  #  item.properties['vaa'] = view_angles['vaa']
+
+  #  out_items.append(item)
   
   endT   = time.time()
   totalT = (endT - startT)/60
@@ -668,7 +685,10 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr, ExtraBandCode):
     spec_score = get_spec_score(SsrData, img, median_blu, median_nir)     
     ready_IC[eoIM.pix_score][i, :,:] = spec_score * time_score 
    
-  Parallel(n_jobs=-1, require='sharedmem')(delayed(score_one_img)(i, time) for i, time in enumerate(ready_IC.time.values))  
+  #for i, time in enumerate(ready_IC.time.values):
+  #  score_one_img(i, time)
+
+  #Parallel(n_jobs=-1, require='sharedmem')(delayed(score_one_img)(i, time) for i, time in enumerate(ready_IC.time.values))  
 
   stop = time.time() 
 
@@ -1065,7 +1085,26 @@ def period_mosaic(inParams, ExtraBands):
   # Get a list of unique tile names and then loop through each unique tile to generate submosaic 
   #==========================================================================================================  
   unique_tiles = get_unique_tile_names(stac_items)  #Get all unique tile names  
-  print('\n<<<<<< The number of unique tiles = %d >>>>>>>'%(len(unique_tiles)))  
+  print('\n<<<<<< The number of unique tiles = %d >>>>>>>'%(len(unique_tiles))) 
+
+  def process_tile(tile, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, ExtraBands):
+    one_tile_items  = get_one_tile_items(stac_items, tile)  # Extract a list of items based on an unique tile name       
+    one_tile_mosaic = get_tile_submosaic(SsrData, one_tile_items, StartStr, EndStr, criteria['bands'], ProjStr, Scale, ExtraBands)
+
+    if one_tile_mosaic is not None:
+        max_spec_val    = xr.apply_ufunc(np.maximum, one_tile_mosaic[SsrData['BLU']], one_tile_mosaic[SsrData['NIR']])
+        one_tile_mosaic = one_tile_mosaic.where(max_spec_val > 0)
+        return one_tile_mosaic
+    
+    return None 
+  
+  with concurrent.futures.ThreadPoolExecutor() as executor:
+    futures = [executor.submit(process_tile, tile, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, ExtraBands) for tile in unique_tiles]
+    
+    for future in concurrent.futures.as_completed(futures):
+        one_tile_mosaic = future.result()
+        if one_tile_mosaic is not None:
+            base_img = base_img.combine_first(one_tile_mosaic)
   
   '''
   def ingest_one_tile(tile):
@@ -1081,7 +1120,8 @@ def period_mosaic(inParams, ExtraBands):
   
   #Parallel(n_jobs=1, require='sharedmem')(delayed(ingest_one_tile)(tile, base_img) for tile in unique_tiles) 
   '''
-
+  
+  '''
   count = 1
   for tile in unique_tiles:
     sub_mosaic_start = time.time()
@@ -1103,7 +1143,8 @@ def period_mosaic(inParams, ExtraBands):
     sub_mosaic_time = (sub_mosaic_stop - sub_mosaic_start)/60
     print('\n<<<<<<<<<< Complete %2dth sub mosaic, elapsed time = %6.2f minutes>>>>>>>>>'%(count, sub_mosaic_time))
     count += 1
-    
+  '''
+
   mosaic_stop = time.time()
   mosaic_time = (mosaic_stop - mosaic_start)/60
   print('\n\n<<<<<<<<<< The total elapsed time for generating the mosaic = %6.2f minutes>>>>>>>>>'%(mosaic_time))
