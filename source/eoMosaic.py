@@ -13,8 +13,8 @@ import pystac_client as psc
 import odc.stac
 import dask.diagnostics as ddiag
 import dask
-from joblib import Parallel
-from joblib import delayed
+#from joblib import Parallel
+#from joblib import delayed
 import concurrent.futures
 
 from collections import defaultdict
@@ -677,23 +677,31 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr, ExtraBandCode):
   median_blu = median[SsrData['BLU']]
   median_nir = median[SsrData['NIR']]
   
-  def score_one_img(i, time):
-    timestamp  = pd.Timestamp(time).to_pydatetime()
+  '''
+  def score_one_img(i, T):
+    timestamp  = pd.Timestamp(T).to_pydatetime()
     time_score = get_time_score(timestamp, midDate, SsrData['SSR_CODE'])   
     
     img = ready_IC.isel(time=i)
     spec_score = get_spec_score(SsrData, img, median_blu, median_nir)     
     ready_IC[eoIM.pix_score][i, :,:] = spec_score * time_score 
+  '''
    
-  #for i, time in enumerate(ready_IC.time.values):
-  #  score_one_img(i, time)
+  for i, T in enumerate(ready_IC.time.values):
+    #score_one_img(i, T)
+    timestamp  = pd.Timestamp(T).to_pydatetime()
+    time_score = get_time_score(timestamp, midDate, SsrData['SSR_CODE'])   
+    
+    img = ready_IC.isel(time=i)
+    spec_score = get_spec_score(SsrData, img, median_blu, median_nir)     
+    ready_IC[eoIM.pix_score][i, :,:] = spec_score * time_score 
 
   #Parallel(n_jobs=-1, require='sharedmem')(delayed(score_one_img)(i, time) for i, time in enumerate(ready_IC.time.values))  
 
   stop = time.time() 
 
   return ready_IC, (stop - start)/60.0
-
+  
   #==========================================================================================================
   # Modify the empty layer with time and spectral scores  
   #==========================================================================================================
