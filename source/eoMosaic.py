@@ -464,31 +464,35 @@ def get_score_refers(ready_IC):
 
 
 #############################################################################################################
-# Description: This function attaches a score band to each image in a xarray Dataset.
-#
-# Note:        The given "masked_IC" may be either an image collection with time dimension or a single image
-#              without time dimension
+# Description: This function attaches a score band to each image in a xarray Dataset object.
 #
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
-# 
+#                    2024-Jul-25  Lixin Sun  Parallelized the code using 'concurrent.futures' module.
+#  
 #############################################################################################################
 def attach_score(SsrData, ready_IC, StartStr, EndStr):
-  '''Attaches a score band to each image in a xarray Dataset, which is equivalent to an image collection in GEE
-  '''
+  '''Attaches a score band to each image in a xarray Dataset object, an image collection equivalent in GEE.
+     Args:
+       SsrData(dictionary): A dictionary containing some metadata about a sensor;
+       ready_ID(xarray.dataset): A xarray dataset object containing a set of STAC images/items;
+       StartStr(string): A string representing the start date of a timeframe;
+       EndStr(string): A string representing the end date of a timeframe.'''
   #print('<attach_score> ready IC = ', ready_IC)
   #print('\n\n<attach_score> ready IC after adding empty pixel score = ', ready_IC)
   #print('\n\n<attach_score> all pixel score layers in ready_IC = ', ready_IC[eoIM.pix_score])
   #==========================================================================================================
-  # Determine central Date of a compositing period and a median image of all spectral bands
+  # Create a median image for all spectral bands
   #==========================================================================================================
-  start = time.time()
-
-  midDate = datetime.strptime(eoUs.period_centre(StartStr, EndStr), "%Y-%m-%d")
+  start = time.time() 
 
   median     = get_score_refers(ready_IC)
   median_blu = median[SsrData['BLU']]
   median_nir = median[SsrData['NIR']]
-    
+  
+  #==========================================================================================================
+  # Define an internal function that can calculate time and spectral scores for each image in 'ready_IC'
+  #==========================================================================================================
+  midDate = datetime.strptime(eoUs.period_centre(StartStr, EndStr), "%Y-%m-%d")  
   def image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir):
     timestamp  = pd.Timestamp(T).to_pydatetime()
     time_score = get_time_score(timestamp, midDate, SsrData['SSR_CODE'])   
@@ -498,6 +502,9 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr):
     
     return i, spec_score * time_score
   
+  #==========================================================================================================
+  # Parallelize the process of score calculations for every image in 'ready_IC'
+  #==========================================================================================================
   time_vals = list(ready_IC.time.values)
   with concurrent.futures.ThreadPoolExecutor() as executor:
     futures = [executor.submit(image_score, i, T, ready_IC, midDate, SsrData, median_blu, median_nir) for i, T in enumerate(time_vals)]
@@ -633,7 +640,6 @@ def get_tile_submosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Sca
        TileItems(List): A list of STAC items associated with a specific tile;
        ExtraBandCode(Int): An integer indicating if to attach extra bands to mosaic image.'''
   
-  start_time = time.time()
   #==========================================================================================================
   # 
   #==========================================================================================================
@@ -649,15 +655,15 @@ def get_tile_submosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Sca
   with ddiag.ProgressBar():
     xrDS.load()
   
-  print('\n<get_sub_mosaic> loaded xarray dataset:\n', xrDS) 
+  print('\n<get_tile_submosaic> loaded xarray dataset:\n', xrDS) 
 
   time_values = xrDS.coords['time'].values
-  print("\n<get_sub_mosaic> Time Dimension Values:")
+  print("\n<get_tile_submosaic> Time Dimension Values:")
   for t in time_values:
     print(t)
 
   #==========================================================================================================
-  # Attach an empty layer (with all pixels equal to ZERO) to eath temporal item (an image here) in "xrDS" 
+  # Attach three layers, an empty 'score', acquisition DOY and 'time_index', to eath item/image in "xrDS" 
   #==========================================================================================================
   xrDS[eoIM.pix_score] = xrDS[SsrData['BLU']]*0
   
@@ -668,25 +674,17 @@ def get_tile_submosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Sca
   xrDS['time_index']  = xr.DataArray(np.array(range(0, len(time_values)), dtype='uint8'), dims=['time'])
   
   #==========================================================================================================
-  # Apply default pixel mask to each of the images
+  # Apply default pixel mask, rescaling gain and offset to each image in 'xrDS'
   #==========================================================================================================
-  xrDS, mask_time = eoIM.apply_default_mask(xrDS, SsrData)
-
-  #print('\n<get_sub_mosaic> Complete applying default mask, elapsed time = %6.2f minutes'%(mask_time))  
-
-  #==========================================================================================================
-  # Apply gain and offset to each band in a xarray dataset
-  #==========================================================================================================  
-  xrDS, rescale_time = eoIM.apply_gain_offset(xrDS, SsrData, 100, False)
-  
-  #print('<get_sub_mosaic> Complete applying gain and offset, elapsed time = %6.2f minutes'%(rescale_time))
+  xrDS = eoIM.apply_default_mask(xrDS, SsrData)
+  xrDS = eoIM.apply_gain_offset(xrDS, SsrData, 100, False)
 
   #==========================================================================================================
-  # Calculate compositing scores for every valid pixel in xarray dataset object 
+  # Calculate compositing scores for every valid pixel in xarray dataset object (xrDS)
   #==========================================================================================================
   xrDS, score_time = attach_score(SsrData, xrDS, StartStr, EndStr)
 
-  print('<get_sub_mosaic> Complete pixel scoring, elapsed time = %6.2f minutes'%(score_time)) 
+  print('<get_tile_submosaic> Complete pixel scoring, elapsed time = %6.2f minutes'%(score_time)) 
 
   #==========================================================================================================
   # Create a composite image based on compositing scores
@@ -710,7 +708,7 @@ def get_tile_submosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Sca
   #==========================================================================================================
   sub_mosaic = sub_mosaic.drop_vars("time_index")
   sub_mosaic = sub_mosaic.drop_vars("score")
-
+  
   return sub_mosaic
 
   
@@ -779,32 +777,32 @@ def period_mosaic(inParams, ExtraBands):
   unique_tiles = get_unique_tile_names(stac_items)  #Get all unique tile names  
   print('\n<<<<<< The number of unique tiles = %d >>>>>>>'%(len(unique_tiles))) 
 
-  def process_tile(tile, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, ExtraBands):
+  def mosaic_one_tile(tile, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, ExtraBands):
     one_tile_items  = get_one_tile_items(stac_items, tile)  # Extract a list of items based on an unique tile name       
     one_tile_mosaic = get_tile_submosaic(SsrData, one_tile_items, StartStr, EndStr, criteria['bands'], ProjStr, Scale, ExtraBands)
 
     if one_tile_mosaic is not None:
       max_spec_val    = xr.apply_ufunc(np.maximum, one_tile_mosaic[SsrData['BLU']], one_tile_mosaic[SsrData['NIR']])
       one_tile_mosaic = one_tile_mosaic.where(max_spec_val > 0)
-      return one_tile_mosaic
     
-    return None 
+    else:
+      one_tile_mosaic = None 
+    
+    return one_tile_mosaic
   
   with concurrent.futures.ThreadPoolExecutor() as executor:
-    futures = [executor.submit(process_tile, tile, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, ExtraBands) for tile in unique_tiles]
-    
-    count = 1
+    futures = [executor.submit(mosaic_one_tile, tile, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, ExtraBands) for tile in unique_tiles]    
+    count = 0
     for future in concurrent.futures.as_completed(futures):
-      sub_mosaic_start = time.time()
+      startT = time.time()  
       one_tile_mosaic = future.result()
       if one_tile_mosaic is not None:
-        base_img = base_img.combine_first(one_tile_mosaic)
-
-        sub_mosaic_stop = time.time()    
-        sub_mosaic_time = (sub_mosaic_stop - sub_mosaic_start)/60    
-        print('\n<<<<<<<<<< Complete %2dth sub mosaic, elapsed time = %6.2f minutes>>>>>>>>>'%(count, sub_mosaic_time))
+        base_img = base_img.combine_first(one_tile_mosaic)        
         count += 1
-  
+      
+      stopT = time.time()
+      print('\n<<<<<<<<<< Complete %2dth sub mosaic, elapsed time = %6.2f minutes>>>>>>>>>'%(count, (stopT - startT)/60.0))
+
   mosaic_stop = time.time()
   mosaic_time = (mosaic_stop - mosaic_start)/60
   print('\n\n<<<<<<<<<< The total elapsed time for generating the mosaic = %6.2f minutes>>>>>>>>>'%(mosaic_time))

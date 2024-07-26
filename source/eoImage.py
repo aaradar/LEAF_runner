@@ -474,8 +474,6 @@ def apply_gain_offset(xrDS, SsrData, MaxRef, all_bands):
        MaxREF: The maximum reflectance value (1 or 100);
        all_bands(Boolean): A flag indicating if apply gain and offset to all bands or not.''' 
   
-  start = time.time()
-
   #================================================================================================
   # Apply gain and offset
   #================================================================================================
@@ -490,13 +488,7 @@ def apply_gain_offset(xrDS, SsrData, MaxRef, all_bands):
 
     xrDS = xrDS.assign(**{var: apply_coeffs(xrDS[var]) for var in band_names})
   
-  #================================================================================================
-  # Replace negative and small pixels values with 0.01
-  #================================================================================================
-  #min_val = 0.001
-  stop = time.time()
-
-  return xrDS, (stop - start)/60.0
+  return xrDS
 
 
 
@@ -515,21 +507,16 @@ def apply_default_mask(xrDS, SsrData):
      Args:        
        xrDS(xrDataset): A given xarray dataset object to which default mask will be applied  
        SsrData(Dictionary): A Dictionary containing metadata associated with a sensor and data unit.''' 
-  start = time.time()
-
   ssr_code = SsrData['SSR_CODE']
 
   if ssr_code > MAX_LS_CODE and ssr_code < 25:  # For Sentinel-2 
     scl = xrDS['scl']
     # The pixels with SCL = 0 must be masked out
 
-    stop = time.time()
-
-    return xrDS.where((scl == 2) | ((scl > 3) & (scl < 8)) | (scl == 10)), (stop-start)/60.0
+    return xrDS.where((scl == 2) | ((scl > 3) & (scl < 8)) | (scl == 10))
   
   else:    
-    stop = time.time()
-    return xrDS, (stop-start)/60.0
+    return xrDS
   
 
 
