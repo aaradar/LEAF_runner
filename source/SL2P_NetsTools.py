@@ -3,7 +3,7 @@ import pandas as pd
 import xarray as xr
 from datetime import datetime
 
-
+import eoImage as eoIM
 import SL2P_V1
 
 
@@ -148,10 +148,11 @@ def makeIndexLayer(LCMap, DSOptions):
   # Apply the mapping to the land cover map
   netID_map_np = np.vectorize(mapping_dict.get)(LCMap)
   
-  netID_map_xr = LCMap
-  netID_map_xr.data = netID_map_np
+  netID_map = LCMap
+  netID_map.data = netID_map_np
+  netID_map.name = 'netID_map'
 
-  return netID_map_xr
+  return netID_map.to_dataset()
 
 
 
@@ -245,7 +246,7 @@ def applyNet(stacked_xrDS, one_VP_nets, netID_map, netID):
     #========================================================================================================
     # Create an image by masking out the pixels with different network IDs from 'netID'  
     #========================================================================================================
-    masked_stacked_xrDS = stacked_xrDS.where(netID_map['classID'] == netID, np.nan)
+    masked_stacked_xrDS = stacked_xrDS.where(netID_map['netID_map'] == netID, np.nan)
 
     #========================================================================================================
     # Select one network specific for ONE vegetation parameter and a given 'netID'
@@ -289,15 +290,16 @@ def applyNet(stacked_xrDS, one_VP_nets, netID_map, netID):
 
 
 #############################################################################################################
-# Description: This function 
+# Description: This function returns one vegetation parameter map corresponding to the given image (inImg)
+#
 #############################################################################################################
-def wrapperNNets(SL2P_2DNets, VP_Options, DS_Options, xrDS, netID_map):
+def one_vege_param_map(SL2P_2DNets, VP_Options, DS_Options, inImg, netID_map):
   '''Applies a set of shallow networks to an image based on a land cover map.
 
      Args: 
        SL2P_2DNets(ee.List): a 2D matrix of networks with rows and columns for different veg parameters and land cover types;     
-       VP_Options(ee.Dictionary): a dictionary containing the options related to a selected vege parameter type;
-       DS_Options(ee.Dictionary): a dictionary containing the options related to a selected satellite type;
+       VP_Options(ee.Dictionary): a dictionary containing the options associated with a specific vege parameter type;
+       DS_Options(ee.Dictionary): a dictionary containing the options associated with a selected satellite type;
        inImg(xarray.dataset): a mosaic image for vegetation parameter extraction;
        netID_map(xarray.dataset): a 2D map containing network IDs for different pixels. '''
   
@@ -305,17 +307,22 @@ def wrapperNNets(SL2P_2DNets, VP_Options, DS_Options, xrDS, netID_map):
   # Get networks for one vegetation parameter (defined by "VPOptions['variable']-1") and all landcover types
   #==========================================================================================================
   one_param_nets = SL2P_2DNets[VP_Options['variable']-1]
-  nbClsNets = len(one_param_nets)  
+  nbClsNets      = len(one_param_nets)  
   
   #========================================================================================================
   # Stack the spectral band variables into a single DataArray
   #========================================================================================================
-  stacked_data = xrDS.to_array(dim='band')
+  print('<estimate_VParams> the variables in the given image = ', inImg.data_vars)
+  stacked_data = inImg.to_array(dim='band')
   
   for netID in range(nbClsNets):
     estimates = [applyNet(stacked_data, one_param_nets, netID_map, netID)]
   
-  #return applyNet(xrDS, one_param_nets, netID_map)
+  combined = xr.concat(estimates, dim='class_param')
+
+  vege_param_map = combined.max(dim = 'class_param')
+
+  return vege_param_map
 
 
 
@@ -348,12 +355,12 @@ def invalidOutput(estimate,netOptions):
 #############################################################################################################
 # Description: 
 #############################################################################################################
-def estimate_VParams(inParams, DS_Options, xrDS, netID_map):
+def estimate_VParams(inParams, DS_Options, inImg, netID_map):
   '''
     Args:
       inParams(Dictionary): A dictionary containing all required input parameters;      
       DS_Options(Dictionary): A dictionary containing options for a specific satellite sensor/dataset;
-      xrDS(xarray.dataset): A xarray.dataset containing all required bands;
+      inImg(xarray.dataset): A image in xarray.dataset format and containing all required bands;
       netID_map(xarray.dataset): A xarray.dataset containing network IDs for different pixels. '''
   #==========================================================================================================
   # Prepare SL2P network 2D-matrics with rows and columns corresponding to different veg parameters and 
@@ -362,24 +369,32 @@ def estimate_VParams(inParams, DS_Options, xrDS, netID_map):
   estimateSL2P_2DNets, errorsSL2P_2DNets = makeModels(DS_Options) 
     
   #==========================================================================================================
-  # Clip 'netID_map' to match the spatial dimensions of 'xrDS' as necessary
+  # Clip 'netID_map' to match the spatial dimensions of the given image
   #==========================================================================================================
-  xrDS_spatial_dims      = {dim: size for dim, size in xrDS.items() if dim in ['x', 'y']}
-  netID_map_spatial_dims = {dim: size for dim, size in netID_map.items() if dim in ['x', 'y']}
+  Img_dims = (inImg.dims['x'], inImg.dims['y'])
+  Map_dims = (netID_map.dims['x'], netID_map.dims['y'])
+
+  sub_netID_map = netID_map
+  if Img_dims != Map_dims:
+    sub_netID_map = netID_map.sel(x=inImg['x'], y=inImg['y'])
   
-  cliped_netID_map = netID_map
-  if xrDS_spatial_dims != netID_map_spatial_dims:
-    cliped_netID_map = netID_map.sel(x=xrDS['x'], y=xrDS['y'])
+  print('variables in sub_netID_map = ', sub_netID_map)
 
   #==========================================================================================================
-  # run SL2P
-  #==========================================================================================================
-  for v_param in inParams['prod_names']:
-    VP_Options = SL2P_V1.make_VP_options(v_param)
+  # Loop through each vegetation parameter
+  #==========================================================================================================  
+  coords       = {coord: inImg.coords[coord] for coord in ['x', 'y']}
+  out_veg_maps = xr.Dataset(coords=coords)
+  date_img     = inImg[eoIM.pix_date]
+  inImg        = inImg.drop_vars([eoIM.pix_date]) 
+
+  for param_name in inParams['prod_names']:
+    VP_Options = SL2P_V1.make_VP_options(param_name)  #VP => vegetation parameter
     if VP_Options != None:
-      outDF['estimate'+v_param],   outDF['networkID'] = wrapperNNets(estimateSL2P_2DNets, VP_Options, DS_Options, xrDS, cliped_netID_map)
-      outDF['error'+v_param], Network_Ind_uncertainty = wrapperNNets(errorsSL2P_2DNets,   VP_Options, DS_Options, xrDS, cliped_netID_map)
+      out_veg_maps[param_name] = one_vege_param_map(estimateSL2P_2DNets, VP_Options, DS_Options, inImg, sub_netID_map)
+      #outDF['error'+v_param] = one_vege_param_map(errorsSL2P_2DNets,   VP_Options, DS_Options, inImg, cliped_netID_map)
 
+  '''
   print('SL2P end: %s' %(datetime.now()))
     
   # generate sl2p input data flag
@@ -388,8 +403,9 @@ def estimate_VParams(inParams, DS_Options, xrDS, netID_map):
   # generate sl2p output product flag
   outDF['QC_output'] = invalidOutput(outDF.loc[:,'estimate'+VPName], VP_Options)
   print('Done')
+  '''
 
-  return outDF
+  return out_veg_maps, date_img
 
 
 
@@ -440,7 +456,8 @@ def SL2PCCRS(xrDS, VParamName, DatasetName):
   
   if not SL2P_V1.is_valid_VP_name(VParamName):
     raise ValueError(('Supported biophysical parameetr names: %s'%(VParamName)))  
-
+  
+  SsrData = eoIM.SSR_META_DICT[str(inParams['sensor']).upper()]
   DS_Options = SL2P_V1.make_DS_options('sl2p_nets', DatasetName)
   VP_Options = SL2P_V1.make_VP_options(VParamName)
   

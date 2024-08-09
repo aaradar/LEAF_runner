@@ -11,6 +11,8 @@ import eoMosaic as eoMz
 import eoUtils as eoUs
 import eoParams as eoPM
 import eoTileGrids as eoTG
+import eoAuxData as eoAD
+
 
 import SL2P_V1
 import SL2P_NetsTools
@@ -106,7 +108,7 @@ def LEAF_base_image(Params, Region, ProjStr, Scale, Criteria):
 
 
 #############################################################################################################
-# Description: This function produces all the required vegetation parameter maps for one tile and one month.
+# Description: This function produces all the required vegetation parameter maps for ONE tile and ONE month.
 # 
 # Note: This function is equivalent to the 'SL2P_estimation' in GEE LEAF package
 #
@@ -125,7 +127,7 @@ def create_LEAF_maps(inParams):
   if inParams == None:
     print('<create_LEAF_maps> Cannot create vegetation parameter maps due to invalid input parameter!')
     return None
-    
+
   elif len(inParams['current_tile']) < 6: #Ensure the existence of a valid 'current_tile' item
     print('<create_LEAF_maps> Invalid <current_tile> item in parameter dictionary!')
     return None
@@ -158,14 +160,9 @@ def create_LEAF_maps(inParams):
   #==========================================================================================================
   # Read and clip land cover map based on the spatial extent of "base_img"
   #==========================================================================================================  
-  LC_map = eoIM.read_geotiff('C:\\Work_documents\\Canada_LC_2020_30m.tif', OutName='classMap')
-  print('\n<create_LEAF_maps> original LC map = ', LC_map) 
-  
-  sub_LC_map = eoIM.xrDS_spatial_match(base_img, LC_map, True)    
-  print('\n<create_LEAF_maps> clipped LC map = ', sub_LC_map) 
-  
-  DSName = SsrData['NAME']
-  DS_Options = SL2P_V1.make_DS_options('sl2p_nets', DSName)
+  sub_LC_map = eoAD.get_local_CanLC('C:\\Work_documents\\Canada_LC_2020_30m.tif', base_img)
+
+  DS_Options = SL2P_V1.make_DS_options('sl2p_nets', SsrData)
   
   netID_map = SL2P_NetsTools.makeIndexLayer(sub_LC_map, DS_Options)
   
@@ -180,19 +177,17 @@ def create_LEAF_maps(inParams):
 
   def estimate_one_tile_params(tileName, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, inParams, DS_Options, netID_map):
     one_tile_items  = eoMz.get_one_tile_items(stac_items, tileName)  # Extract a list of stac items based on an unique tile name       
-    one_tile_mosaic = eoMz.get_tile_submosaic(SsrData, one_tile_items, StartStr, EndStr, criteria['bands'], ProjStr, Scale, eoIM.EXTRA_NONE)
+    one_tile_mosaic = eoMz.get_tile_submosaic(SsrData, one_tile_items, StartStr, EndStr, criteria['bands'], ProjStr, Scale, eoIM.EXTRA_ANGLE)
 
     if one_tile_mosaic is not None:
-      max_spec_val    = xr.apply_ufunc(np.maximum, one_tile_mosaic[SsrData['BLU']], one_tile_mosaic[SsrData['NIR']])
+      max_spec_val    = xr.apply_ufunc(np.maximum, one_tile_mosaic[SsrData['GRN']], one_tile_mosaic[SsrData['NIR']])
       one_tile_mosaic = one_tile_mosaic.where(max_spec_val > 0)
 
       one_tile_params = SL2P_NetsTools.estimate_VParams(inParams, DS_Options, one_tile_mosaic, netID_map)    
-    else:
-      one_tile_params = None 
     
     return one_tile_params
   
-
+  estimate_one_tile_params(unique_tiles[0], stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, inParams, DS_Options, netID_map)
 
   ''' 
   with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -392,7 +387,10 @@ params = {
     #'end_date': '2022-09-15'
 }
 
-mosaic = create_LEAF_maps(params)
+
+leaf_params = eoPM.get_LEAF_params(params)
+
+leaf_maps = create_LEAF_maps(leaf_params)
 
 # export_mosaic(params, mosaic)
 

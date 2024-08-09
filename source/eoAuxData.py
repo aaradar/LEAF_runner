@@ -1,13 +1,17 @@
+import os
 import pystac_client as psc
 import odc.stac
 
 import eoParams as eoPM
 import eoUtils as eoUs
+import eoImage as eoIM
+
 
 CCMEO_DC_URL =  'https://datacube.services.geo.ca/api'
 
+
 #############################################################################################################
-# Description: This function obtains the Canada landcover map from CCMEO's DataCube.
+# Description: This function returns the Canada landcover map downloaded from CCMEO's DataCube.
 #
 # Revision history:  2024-Aug-07  Lixin Sun  Initial creation.
 #
@@ -37,6 +41,34 @@ def get_CanLC(inYear, Region, Resolution, Projection):
                         resolution = Resolution)
   
   print(LC_xrDS)
+
+
+
+
+
+#############################################################################################################
+# Description: This function returns the Canada landcover map read from a local file.
+#
+# Revision history:  2024-Aug-07  Lixin Sun  Initial creation.
+#
+#############################################################################################################
+def get_local_CanLC(FilePath, Refer_xrDs):
+  if not os.path.exists(FilePath):
+    print('<get_local_CanLC> The given file path <%s> is invalid!'%FilePath)
+    return None
+  
+  LC_map = eoIM.read_geotiff(FilePath, OutName='classMap').squeeze('band')
+  print('\n<get_local_CanLC> original LC map = ', LC_map) 
+  
+  sub_LC_map = eoIM.xrDS_spatial_match(Refer_xrDs, LC_map, True)    
+  print('\n<get_local_CanLC> clipped LC map = ', sub_LC_map) 
+
+  return sub_LC_map
+
+
+
+
+
 
   #==========================================================================================================
   # Select a landcover item based on the given "inYear"

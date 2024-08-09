@@ -104,7 +104,7 @@ def get_query_conditions(SsrData, StartStr, EndStr):
     query_conds['catalog']    = "https://earth-search.aws.element84.com/v1"
     query_conds['collection'] = "sentinel-2-l2a"
     query_conds['timeframe']  = str(StartStr) + '/' + str(EndStr)
-    query_conds['bands']      = ['blue', 'green', 'red', 'rededge1', 'rededge2', 'rededge3', 'nir08', 'swir16', 'swir22', 'scl']
+    query_conds['bands']      = SsrData['ALL_BANDS'] + ['scl']
     query_conds['filters']    = {"eo:cloud_cover": {"lt": 80.0} }    
 
   elif ssr_code < eoIM.MAX_LS_CODE and ssr_code > 0:
@@ -740,23 +740,28 @@ def get_tile_submosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Sca
   #==========================================================================================================
   xrDS = xrDS.fillna(-0.0001)
   max_indices = xrDS[eoIM.pix_score].argmax(dim='time')
-  sub_mosaic  = xrDS.isel(time=max_indices)  
-  
+  sub_mosaic  = xrDS.isel(time=max_indices)
+
+  #elif extra_code == eoIM.EXTRA_NDVI:
+  #  xrDS = eoIM.attach_NDVIBand(xrDS, SsrData)
   #==========================================================================================================
   # Attach an additional bands as necessary 
   #==========================================================================================================
+  print('data variables of original dataset = ', sub_mosaic.data_vars)
+
   extra_code = int(ExtraBandCode)
   if extra_code == eoIM.EXTRA_ANGLE:
-    sub_mosaic = eoIM.attach_AngleBands(sub_mosaic, TileItems)  
-  #elif extra_code == eoIM.EXTRA_NDVI:
-  #  xrDS = eoIM.attach_NDVIBand(xrDS, SsrData)
-  
+    sub_mosaic = eoIM.attach_AngleBands(sub_mosaic, TileItems)
+    sub_mosaic = sub_mosaic.drop_vars(['blue','scl'])    
+
   #==========================================================================================================
   # Remove 'time_index' and 'score' variables from submosaic 
   #==========================================================================================================
-  sub_mosaic = sub_mosaic.drop_vars("time_index")
-  sub_mosaic = sub_mosaic.drop_vars("score")
-  
+  time_index = sub_mosaic['time_index']
+  sub_mosaic = sub_mosaic.where(time_index > 0)
+  sub_mosaic = sub_mosaic.drop_vars(['time_index','score'])
+  print('data variables of output dataset = ', sub_mosaic.data_vars)
+
   return sub_mosaic
 
   
@@ -903,23 +908,23 @@ def export_mosaic(inParams, inMosaic):
 
 
 
-params = {
-    'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
-    'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
-    'year': 2022,                # An integer representing image acquisition year
-    'nbYears': -1,               # positive int for annual product, or negative int for monthly product
-    'months': [6],               # A list of integers represening one or multiple monthes     
-    'tile_names': ['tile42_411'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-    'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
-    'resolution': 200,            # Exporting spatial resolution    
-    'out_folder': 'C:/Work_documents/test_xr_tile55_411_2021_200m',  # the folder name for exporting
-    'projection': 'EPSG:3979'   
+# params = {
+#     'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
+#     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
+#     'year': 2022,                # An integer representing image acquisition year
+#     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
+#     'months': [6],               # A list of integers represening one or multiple monthes     
+#     'tile_names': ['tile42_411'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+#     'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
+#     'resolution': 200,            # Exporting spatial resolution    
+#     'out_folder': 'C:/Work_documents/test_xr_tile55_411_2021_200m',  # the folder name for exporting
+#     'projection': 'EPSG:3979'   
     
-    #'start_date': '2022-06-15',
-    #'end_date': '2022-09-15'
-}
+#     #'start_date': '2022-06-15',
+#     #'end_date': '2022-09-15'
+# }
 
-mosaic = period_mosaic(params, eoIM.EXTRA_ANGLE)
+# mosaic = period_mosaic(params, eoIM.EXTRA_ANGLE)
 
 # export_mosaic(params, mosaic)
 

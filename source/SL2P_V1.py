@@ -155,27 +155,9 @@ def get_SL2P_filenames(DSName, NetPath):
 #              specified dataset/sensor.
 #
 #############################################################################################################
-def get_DS_bands(DSName):
-  DSName = DSName.upper()
-
-  if DSName == VALID_DS_NAMES[0]:  #'S2_SR'
-    return  ['cosVZA','cosSZA','cosRAA','B3', 'B4', 'B5', 'B6', 'B7', 'B8A', 'B11', 'B12']
-
-  elif DSName == VALID_DS_NAMES[1]:  #'S2_SR_10M'
-    return ['cosVZA','cosSZA','cosRAA', 'B2', 'B3', 'B4', 'B8A' ]
+def get_DS_bands(SsrData):
+  return ['cosVZA','cosSZA','cosRAA'] + SsrData['LEAF_BANDS']
   
-  elif DSName == VALID_DS_NAMES[2]:  #'L8_SR'
-    return ['cosVZA','cosSZA','cosRAA', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7']
-  
-  elif DSName == VALID_DS_NAMES[3]:  #'L9_SR'
-    return ['cosVZA','cosSZA','cosRAA', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7']
-  
-  elif DSName == VALID_DS_NAMES[4]:  #'HLS_30M'
-    return ['cosVZA','cosSZA','cosRAA', 'B3', 'B4', 'B5', 'B6', 'B7']
-  
-  else:
-    print ('<get_DS_description> The given dataset name <%s> is invalid!'%(DSName))
-    return []
 
 
 
@@ -183,12 +165,12 @@ def get_DS_bands(DSName):
 # Description: This function creates a dictionary containing all the options associated with a dataset type.
 #  
 #############################################################################################################
-def make_DS_options(NetPath, DSName):
+def make_DS_options(NetPath, SsrData):
   if os.path.exists(NetPath) == False or os.path.isdir(NetPath) == False:
     print ('<make_DS_options> The given network path <%s> dose not exist!'%(NetPath))
     return None
   
-  DSName = DSName.upper()
+  DSName = SsrData['NAME'].upper()
   if is_valid_DS_name(DSName) == False:
     print ('<make_DS_options> The given dataset name <%s> is invalid!'%(DSName))
     return None
@@ -204,7 +186,7 @@ def make_DS_options(NetPath, DSName):
   DS_OPTIONS['SL2P_domain']    = create_FeatureCollection(filenames['domain'])
   DS_OPTIONS['Network_Ind']    = create_FeatureCollection(filenames['netID'])
   DS_OPTIONS['legend']         = create_FeatureCollection(filenames['legend'])
-  DS_OPTIONS['inputBands']     = get_DS_bands(DSName)
+  DS_OPTIONS['inputBands']     = get_DS_bands(SsrData)
   DS_OPTIONS['numVariables']   = 7
 
   return DS_OPTIONS
