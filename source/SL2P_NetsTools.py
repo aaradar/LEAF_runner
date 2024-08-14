@@ -300,8 +300,8 @@ def invalidOutput(estimate,netOptions):
 # Description: This function returns a sub netID_map clipped based on the spatial dimensions of 'inImg'
 #############################################################################################################
 def clip_netID_map(inImg, netID_map):
-  Img_dims = (inImg.dims['x'], inImg.dims['y'])
-  Map_dims = (netID_map.dims['x'], netID_map.dims['y'])
+  Img_dims = (inImg.sizes['x'], inImg.sizes['y'])
+  Map_dims = (netID_map.sizes['x'], netID_map.sizes['y'])
 
   sub_netID_map = netID_map
   if Img_dims != Map_dims:
