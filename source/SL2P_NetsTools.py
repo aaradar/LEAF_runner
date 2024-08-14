@@ -148,7 +148,7 @@ def makeIndexLayer(LCMap, DSOptions):
   # Apply the mapping to the land cover map
   netID_map_np = np.vectorize(mapping_dict.get)(LCMap)
   
-  netID_map = LCMap
+  netID_map = LCMap.copy(deep=True)
   netID_map.data = netID_map_np
   netID_map.name = 'netID_map'
 

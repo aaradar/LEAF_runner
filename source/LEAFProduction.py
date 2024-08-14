@@ -163,7 +163,7 @@ def create_LEAF_maps(inParams):
   #==========================================================================================================
   # Read and clip land cover map based on the spatial extent of "base_img"
   #==========================================================================================================  
-  sub_LC_map = eoAD.get_local_CanLC('C:\\Work_documents\\Canada_LC_2020_30m.tif', base_img)
+  sub_LC_map = eoAD.get_local_CanLC('F:\\Canada_LC2020\\Canada_LC_2020_30m.tif', base_img)
 
   DS_Options = SL2P_V1.make_DS_options('sl2p_nets', SsrData)
   
@@ -189,7 +189,7 @@ def create_LEAF_maps(inParams):
       one_tile_mosaic = one_tile_mosaic.where(max_spec_val > 0)      
 
       one_tile_params = SL2P_NetsTools.estimate_VParams(inParams, DS_Options, one_tile_mosaic, netID_map)    
-      eoMz.export_mosaic(inParams, one_tile_params)
+      #eoMz.export_mosaic(inParams, one_tile_params)
 
     return one_tile_params
   
@@ -377,26 +377,26 @@ def LEAF_production(inExeParams):
 
 
 
-params = {
-    'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
-    'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
-    'year': 2022,                # An integer representing image acquisition year
-    'nbYears': -1,               # positive int for annual product, or negative int for monthly product
-    'months': [6],               # A list of integers represening one or multiple monthes     
-    'tile_names': ['tile42_922'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-    'prod_names': ['LAI', 'fCOVER'],    #['mosaic', 'LAI', 'fCOVER', ]    
-    'resolution': 100,            # Exporting spatial resolution    
-    'out_folder': 'C:/Work_documents/test_xr_tile42_922_2022_100m',  # the folder name for exporting
-    'projection': 'EPSG:3979'   
+# params = {
+#     'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
+#     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
+#     'year': 2022,                # An integer representing image acquisition year
+#     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
+#     'months': [6],               # A list of integers represening one or multiple monthes     
+#     'tile_names': ['tile42_922'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+#     'prod_names': ['LAI', 'fCOVER'],    #['mosaic', 'LAI', 'fCOVER', ]    
+#     'resolution': 50,            # Exporting spatial resolution    
+#     'out_folder': 'C:/Work_documents/test_xr_tile42_922_2022_100m',  # the folder name for exporting
+#     'projection': 'EPSG:3979'   
     
-    #'start_date': '2022-06-15',
-    #'end_date': '2022-09-15'
-}
+#     #'start_date': '2022-06-15',
+#     #'end_date': '2022-09-15'
+# }
 
 
-leaf_params = eoPM.get_LEAF_params(params)
+# leaf_params = eoPM.get_LEAF_params(params)
 
-leaf_maps = create_LEAF_maps(leaf_params)
+# leaf_maps = create_LEAF_maps(leaf_params)
 
 
 

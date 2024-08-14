@@ -95,28 +95,27 @@ def get_local_CanLC(FilePath, Refer_xrDs):
   #return ee.Image(ccrs_LC)
 
 
-params = {
-    'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
-    'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
-    'year': 2022,                # An integer representing image acquisition year
-    'nbYears': -1,               # positive int for annual product, or negative int for monthly product
-    'months': [6],               # A list of integers represening one or multiple monthes     
-    'tile_names': ['tile42_911'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-    'prod_names': ['LAI', 'fCOVER'],    #['mosaic', 'LAI', 'fCOVER', ]    
-    'resolution': 20,            # Exporting spatial resolution    
-    'out_folder': 'C:/Work_documents/test_xr_tile55_411_2021_200m',  # the folder name for exporting
-    'projection': 'EPSG:3979'   
+# params = {
+#     'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
+#     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
+#     'year': 2022,                # An integer representing image acquisition year
+#     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
+#     'months': [6],               # A list of integers represening one or multiple monthes     
+#     'tile_names': ['tile42_911'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+#     'prod_names': ['LAI', 'fCOVER'],    #['mosaic', 'LAI', 'fCOVER', ]    
+#     'resolution': 20,            # Exporting spatial resolution    
+#     'out_folder': 'C:/Work_documents/test_xr_tile55_411_2021_200m',  # the folder name for exporting
+#     'projection': 'EPSG:3979'   
     
-    #'start_date': '2022-06-15',
-    #'end_date': '2022-09-15'
-}
+#     #'start_date': '2022-06-15',
+#     #'end_date': '2022-09-15'
+# }
 
-params = eoPM.update_default_params(params)
+# params = eoPM.update_default_params(params)
 
-ProjStr = str(params['projection'])  
-Scale   = int(params['resolution'])
+# ProjStr = str(params['projection'])  
+# Scale   = int(params['resolution'])
 
-Region = eoPM.get_spatial_region(params)  
+# Region = eoPM.get_spatial_region(params)  
 
-
-get_CanLC(2022, Region, Scale, ProjStr)
+# get_CanLC(2022, Region, Scale, ProjStr)
