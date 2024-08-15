@@ -301,7 +301,7 @@ def update_default_params(inParams):
 def get_LEAF_params(inParams):
   out_Params = update_default_params(inParams)  # Modify default parameters with given ones
 
-  if out_Params != None:
+  if out_Params is not None:
     out_Params['nbYears'] = -1                    # Produce monthly products in most cases
     out_Params['unit']    = 2                     # Always surface reflectance for LEAF production
 
@@ -317,7 +317,7 @@ def get_LEAF_params(inParams):
 def get_mosaic_params(inParams):
   out_Params = update_default_params(inParams)  # Modify default parameter dictionary with a given one
 
-  if out_Params != None:
+  if out_Params is not None:
     out_Params['prod_names'] = ['mosaic']         # Of course, product name should be always 'mosaic'
 
   return out_Params  
@@ -332,8 +332,8 @@ def get_mosaic_params(inParams):
 def get_LC_params(inParams):
   out_Params = update_default_params(inParams) # Modify default parameter dictionary with a given one
 
-  if out_Params != None:
-    out_Params['prod_names'] = ['mosaic']      # Of course, product name should be always 'mosaic'
+  if out_Params is not None:
+    out_Params['prod_names'] = ['mosaic']      # Of course, product name should be always 'mosaic'    
 
   return out_Params 
 

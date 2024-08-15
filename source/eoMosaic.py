@@ -862,11 +862,11 @@ def export_mosaic(inParams, inMosaic):
     Args:
       inParams(dictionary): A dictionary containing all required execution parameters;
       inMosaic(xrDS): A xarray dataset object containing mosaic images to be exported.'''
+  
   #==========================================================================================================
   # Get all the parameters for exporting composite images
   #==========================================================================================================
-  params = eoPM.get_mosaic_params(inParams)
-  export_style = str(params['export_style']).lower()
+  params = eoPM.get_mosaic_params(inParams)  
 
   #==========================================================================================================
   # Convert float pixel values to integers
@@ -892,18 +892,22 @@ def export_mosaic(inParams, inMosaic):
   #==========================================================================================================
   # Create individual sub-mosaic and combine it into base image based on score
   #==========================================================================================================
-  spa_scale  = params['resolution']
+  spa_scale    = params['resolution']
+  export_style = str(params['export_style']).lower()
   
   if 'sepa' in export_style:
     for band in rio_mosaic.data_vars:
-      out_img  = rio_mosaic[band]
-      filename = f"{filePrefix}_{band}_{spa_scale}m.tif"
+      out_img     = rio_mosaic[band]
+      filename    = f"{filePrefix}_{band}_{spa_scale}m.tif"
       output_path = os.path.join(dir_path, filename)
       out_img.rio.to_raster(output_path)
   else:
+
     filename = f"{filePrefix}_mosaic_{spa_scale}m.tif"
+
     output_path = os.path.join(dir_path, filename)
     rio_mosaic.to_netcdf(output_path)
+
 
 
 

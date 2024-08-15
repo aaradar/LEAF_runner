@@ -744,5 +744,7 @@ def rescale_spec_bands(inImg, selected_vars, gain, offset):
   return inImg
 
 
+
+
 #test_img = read_geotiff('C:\\Work_documents\\Canada_LC_2020_30m.tif', OutName='test_band')
 #print(test_img)

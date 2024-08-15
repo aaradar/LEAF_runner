@@ -1,3 +1,4 @@
+import os
 import time
 import numpy as np
 import pandas as pd
@@ -158,7 +159,7 @@ def create_LEAF_maps(inParams):
   # (1) Read and clip land cover map based on the spatial extent of "entire_map"
   # (2) Create a network ID map with the same spatial dimensions as clipped landcover map
   #==========================================================================================================  
-  sub_LC_map = eoAD.get_local_CanLC('F:\\Canada_LC2020\\Canada_LC_2020_30m.tif', entire_map)
+  sub_LC_map = eoAD.get_local_CanLC('C:\\Work_documents\\Canada_LC_2020_30m.tif', entire_map)
 
   DS_Options = SL2P_V1.make_DS_options('sl2p_nets', SsrData)  
   netID_map  = SL2P_NetsTools.makeIndexLayer(sub_LC_map, DS_Options)
@@ -286,6 +287,75 @@ def SL2P_estimation(Params):
 
 
 
+#############################################################################################################
+# Description: This function exports the vegetation parameter maps into separate GeoTiff files
+#
+# Revision history:  2024-Aug-15  Lixin Sun  Initial creation
+# 
+#############################################################################################################
+def export_VegParamMaps(inParams, inXrDS):
+  '''
+    This function exports the band images of a mosaic into separate GeoTiff files.
+
+    Args:
+      inParams(dictionary): A dictionary containing all required execution parameters;
+      inXrDS(xrDS): A xarray dataset object containing mosaic images to be exported.'''
+  
+  #==========================================================================================================
+  #
+  #==========================================================================================================  
+  VP_scalers = {}
+  for s in inXrDS.data_vars:
+    S = s.upper()
+    if 'LAI' in S:
+      VPOptions = SL2P_V1.make_VP_options('lai')
+      VP_scalers[s] = VPOptions['scale_factor']
+    elif 'FAPAR' in S or 'FCOVER' in S or 'ALBEDO' in S:  
+      VPOptions = SL2P_V1.make_VP_options('FAPAR')
+      VP_scalers[s] = VPOptions['scale_factor']
+    else:
+      VP_scalers[s] = 1
+
+  #==========================================================================================================
+  # Apply projection
+  #==========================================================================================================
+  rio_xrDS = inXrDS.rio.write_crs(inParams['projection'], inplace=True)  # Assuming WGS84 for this example
+
+  #==========================================================================================================
+  # Create a directory to store the output files
+  #==========================================================================================================
+  dir_path = inParams['out_folder']
+  os.makedirs(dir_path, exist_ok=True)
+
+  #==========================================================================================================
+  # Create prefix filename
+  #==========================================================================================================
+  SsrData    = eoIM.SSR_META_DICT[str(inParams['sensor'])]   
+  region_str = str(inParams['region_str'])
+  period_str = str(inParams['time_str'])
+ 
+  filePrefix = f"{SsrData['NAME']}_{region_str}_{period_str}"
+
+  #==========================================================================================================
+  # Create individual sub-mosaic and combine it into base image based on score
+  #==========================================================================================================
+  spa_scale    = inParams['resolution']
+  export_style = str(inParams['export_style']).lower()
+  
+  if 'sepa' in export_style:
+    for band in rio_xrDS.data_vars:
+      out_img     = (rio_xrDS[band]*VP_scalers[band]).astype(np.uint8)
+      filename    = f"{filePrefix}_{band}_{spa_scale}m.tif"
+      output_path = os.path.join(dir_path, filename)
+      out_img.rio.to_raster(output_path)
+  else:
+    filename = f"{filePrefix}_LEAF_{spa_scale}m.tif"
+
+    output_path = os.path.join(dir_path, filename)
+    rio_xrDS.to_netcdf(output_path)
+
+
+
 
 #############################################################################################################
 # Description: This function can be used to produce monthly vegetation parameter maps for one or multiple 
@@ -340,7 +410,7 @@ def tile_LEAF_production(Params):
         one_product = create_LEAF_maps(Params)
       
         # Export results for ONE tile and ONE month/season
-        eoMz.export_mosaic(Params, one_product)
+        export_VegParamMaps(Params, one_product)
 
 
 
@@ -387,22 +457,22 @@ def LEAF_production(inExeParams):
 
 
 
-# params = {
-#     'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
-#     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
-#     'year': 2022,                # An integer representing image acquisition year
-#     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
-#     'months': [6],               # A list of integers represening one or multiple monthes     
-#     'tile_names': ['tile42_922'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-#     'prod_names': ['LAI', 'fCOVER'],    #['mosaic', 'LAI', 'fCOVER', ]    
-#     'resolution': 50,            # Exporting spatial resolution    
-#     'out_folder': 'C:/Work_documents/test_xr_tile42_922_2022_100m',  # the folder name for exporting
-#     'projection': 'EPSG:3979'   
+params = {
+    'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
+    'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
+    'year': 2022,                # An integer representing image acquisition year
+    'nbYears': -1,               # positive int for annual product, or negative int for monthly product
+    'months': [6],               # A list of integers represening one or multiple monthes     
+    'tile_names': ['tile55_922', 'tile55_921'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+    'prod_names': ['LAI', 'fCOVER'],    #['mosaic', 'LAI', 'fCOVER', ]    
+    'resolution': 200,            # Exporting spatial resolution    
+    'out_folder': 'C:/Work_documents/LEAF_tile55_2022_200m',  # the folder name for exporting
+    'projection': 'EPSG:3979'   
     
-#     #'start_date': '2022-06-15',
-#     #'end_date': '2022-09-15'
-# }
+    #'start_date': '2022-06-15',
+    #'end_date': '2022-09-15'
+}
 
 
-# leaf_params = eoPM.get_LEAF_params(params)
-# leaf_maps = create_LEAF_maps(leaf_params)
+
+LEAF_production(params)
