@@ -45,7 +45,7 @@ RED1_band      = 9
 WV_band        = 10
 
 
-pix_QA          = 'pix_qa'
+pix_QA          = 'QC'
 pix_score       = 'score'
 score_target    = 'score_target'
 pix_date        = 'date'

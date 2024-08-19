@@ -465,8 +465,8 @@ params = {
     'months': [8],               # A list of integers represening one or multiple monthes     
     'tile_names': ['tile55_422'],    # A list of (sub-)tile names (defined using CCRS' tile griding system) 
     'prod_names': ['LAI', 'fCOVER'],    #['mosaic', 'LAI', 'fCOVER', ]    
-    'resolution': 40,            # Exporting spatial resolution    
-    'out_folder': 'C:/Work_documents/LEAF_tile55_422_2023_40m',  # the folder name for exporting
+    'resolution': 400,            # Exporting spatial resolution    
+    'out_folder': 'C:/Work_documents/LEAF_tile55_422_2023_400m',  # the folder name for exporting
     'projection': 'EPSG:3979'   
     
     #'start_date': '2022-06-15',

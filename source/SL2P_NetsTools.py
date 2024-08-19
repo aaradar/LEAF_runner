@@ -270,8 +270,17 @@ def one_vege_param_map(SL2P_2DNets, VP_Options, stackedData, netID_map):
 
 
 
+#############################################################################################################
+# Description: This function returns a flag image indicating the pixels where input values are out of range.
+#
+#############################################################################################################
+def invalidInput(stacked_xrDS, DS_Options):
+  '''Returns a flag image indicating the pixels where input values are out of range.
 
-def invalidInput(stacked_xrDS, VP_Options, DS_Options):
+     Args:
+       stackedData(xarray.dataset): a given xrDataset with all required bands stacked in one xrDataArray;
+       DS_Options(Dictionary): A dictionary containing options for a specific satellite sensor/dataset.'''
+  
   print('<invalidInput> Generating sl2p input data flag')
 
   # Convert stacked data to NumPy array
@@ -281,8 +290,8 @@ def invalidInput(stacked_xrDS, VP_Options, DS_Options):
   [d0, d1, d2] = data_array.shape
   data_array   = data_array.reshape(d0, d1*d2)         
 
-  sl2pDomain=np.sort(np.array([row['properties']['DomainCode'] for row in DS_Options["sl2pDomain"]['features']]))
-  bandList={b:VP_Options["inputBands"].index(b) for b in VP_Options["inputBands"] if not b.startswith('cos')}
+  sl2pDomain=np.sort(np.array([row['properties']['DomainCode'] for row in DS_Options["SL2P_domain"]['features']]))
+  bandList={b:DS_Options["inputBands"].index(b) for b in DS_Options["inputBands"] if not b.startswith('cos')}
   #image = image.reshape(image.shape[0], image.shape[1]*image.shape[2])[list(bandList.values()),:]
   data_array = data_array[list(bandList.values()),:]
 
@@ -291,14 +300,25 @@ def invalidInput(stacked_xrDS, VP_Options, DS_Options):
     
   # Comparing image to sl2pDomain
   flag=np.isin(image_format, sl2pDomain,invert=True).astype(int)
-  return flag.reshape(d1*d2)
+
+  return flag.reshape(d1, d2)
 
 
 
 
-def invalidOutput(estimate,netOptions):
-    print('Generating sl2p output product flag')
-    return np.where((estimate<netOptions['outmin']) | (estimate>netOptions['outmax']),1,0)
+
+#############################################################################################################
+# Description: This function returns a flag image indicating the pixels where output values are out of range.
+#
+#############################################################################################################
+def invalidOutput(estimate, VP_Options):
+  '''Returns a flag image indicating the pixels where output values are out of range.
+     Args:
+       estimate(xarray.dataset): a given xrDataset with all required bands stacked in one xrDataArray;
+       VP_Options(ee.Dictionary): a dictionary containing the options associated with a specific vege parameter type.'''  
+  
+  print('Generating sl2p output product flag')
+  return np.where((estimate < VP_Options['outmin']) | (estimate > VP_Options['outmax']), 1, 0)
 
 
 
@@ -323,7 +343,9 @@ def clip_netID_map(inImg, netID_map):
 
 
 #############################################################################################################
-# Description: 
+# Description: This function estimates all required vegetation parameter maps based on a given image saved as
+#              a xarray.dataset object.
+
 #############################################################################################################
 def estimate_VParams(inParams, DS_Options, inImg, netID_map):
   '''
@@ -332,52 +354,57 @@ def estimate_VParams(inParams, DS_Options, inImg, netID_map):
       DS_Options(Dictionary): A dictionary containing options for a specific satellite sensor/dataset;
       inImg(xarray.dataset): A image in xarray.dataset format and containing all required bands;
       netID_map(xarray.dataset): A xarray.dataset containing network IDs for different pixels. '''
+      
   #==========================================================================================================
-  # Prepare SL2P network 2D-matrics with rows and columns corresponding to different veg parameters and 
-  # landcover types, respectively
+  # Clip 'netID_map' to match the spatial dimensions of the given image (inImg)
   #==========================================================================================================
-  estimateSL2P_2DNets, errorsSL2P_2DNets = makeModels(DS_Options) 
-    
-  #==========================================================================================================
-  # Clip 'netID_map' to match the spatial dimensions of the given image
-  #==========================================================================================================
-  sub_netID_map = clip_netID_map(inImg, netID_map)  
-  print('variables in sub_netID_map = ', sub_netID_map)
+  sub_netID_map = clip_netID_map(inImg, netID_map)
 
   #==========================================================================================================
-  # Loop through each vegetation parameter
+  # Copy pixel date layer from 'inImg' to 'out_veg_maps', which is a xarray.dataset for storing vege 
+  # parameter maps.
   #==========================================================================================================  
-  #coords       = {coord: inImg.coords[coord] for coord in ['x', 'y']}  
   date_img     = inImg[eoIM.pix_date]
   out_veg_maps = xr.Dataset({eoIM.pix_date: date_img})
-  inImg        = inImg.drop_vars([eoIM.pix_date]) 
+  inImg        = inImg.drop_vars([eoIM.pix_date])  # Remove the pixel date layer from 'inImg'
 
   #========================================================================================================
   # Stack the spectral band variables into a single DataArray
   #========================================================================================================
   input_bands = DS_Options['inputBands']
   print('<estimate_VParams> the bands in DS options = ', input_bands)
-  # Reorganize the order of the variables in the given image (inImg)
+  # Reorganize the order of data variables in 'inImg' according to 'input_bands' 
   inImg = inImg[input_bands]
 
   print('<estimate_VParams> the variables in the given image = ', inImg.data_vars)
   # Stack the data variables of 'inImg' into a single DataArray
   stacked_data = inImg.to_array(dim='band')
 
+  # Generate sl2p input data flag
+  QC_img = invalidInput(stacked_data, DS_Options)
+
+  #==========================================================================================================
+  # Prepare SL2P network 2D-matrics with rows and columns corresponding to different veg parameters and 
+  # landcover types, respectively
+  #==========================================================================================================
+  estimateSL2P_2DNets, errorsSL2P_2DNets = makeModels(DS_Options) 
+
   #==========================================================================================================
   # Loop through each vegetation parameter's name
-  #==========================================================================================================
+  #==========================================================================================================  
   for param_name in inParams['prod_names']:
     VP_Options = SL2P_V1.make_VP_options(param_name)  #VP => vegetation parameter
     if VP_Options != None:
-      out_veg_maps[param_name] = one_vege_param_map(estimateSL2P_2DNets, VP_Options, stacked_data, sub_netID_map)
+      estimate = one_vege_param_map(estimateSL2P_2DNets, VP_Options, stacked_data, sub_netID_map)
+      out_veg_maps[param_name] = estimate
+      
+      # generate sl2p output product flag
+      QC_output = invalidOutput(estimate, VP_Options)*2
+      QC_img    = np.bitwise_or(QC_img, QC_output)
+
       #outDF['error'+v_param] = one_vege_param_map(errorsSL2P_2DNets,   VP_Options, DS_Options, inImg, cliped_netID_map)
-
-  # generate sl2p input data flag
-  #QC_input = invalidInput(stacked_data, VP_Options, DS_Options)
-
-  # generate sl2p output product flag
-  #QC_output = invalidOutput(outDF.loc[:,'estimate'+VPName], VP_Options)
+  
+  out_veg_maps[eoIM.pix_QA] = xr.DataArray(data=QC_img, dims=['y', 'x'])
 
   return out_veg_maps
 
