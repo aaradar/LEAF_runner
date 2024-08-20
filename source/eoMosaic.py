@@ -687,22 +687,40 @@ def get_tile_submosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Sca
        SsrData(Dictionary): Some meta data on a used satellite sensor;
        TileItems(List): A list of STAC items associated with a specific tile;
        ExtraBandCode(Int): An integer indicating if to attach extra bands to mosaic image.'''
+  successful_items = []
+  for item_ID in TileItems:
+    try:
+      one_DS = odc.stac.load([item_ID],
+                              bands  = Bands,
+                              chunks = {'x': 1000, 'y': 1000},
+                              crs    = ProjStr, 
+                              resolution = Scale)
+      
+      successful_items.append(one_DS)
+    except Exception as e:
+      continue
   
+  if not successful_items:
+    return None
+  
+  xrDS = xr.concat(successful_items, dim='time')
+
   #==========================================================================================================
   # 
   #==========================================================================================================
-  xrDS = odc.stac.load(TileItems,
-                       bands  = Bands,
-                       chunks = {'x': 1000, 'y': 1000},
-                       crs    = ProjStr, 
-                       resolution = Scale)
+  # xrDS = odc.stac.load(TileItems,
+  #                      bands  = Bands,
+  #                      chunks = {'x': 1000, 'y': 1000},
+  #                      crs    = ProjStr, 
+  #                      resolution = Scale)
 
   #==========================================================================================================
   # Actually load all data from a lazy-loaded dataset into in-memory Numpy arrays
   #==========================================================================================================
   with ddiag.ProgressBar():
     xrDS.load()
-  
+   
+
   print('\n<get_tile_submosaic> loaded xarray dataset:\n', xrDS) 
 
   time_values = xrDS.coords['time'].values
