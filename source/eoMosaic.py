@@ -540,14 +540,17 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr):
   #==========================================================================================================
   # Define an internal function that can calculate time and spectral scores for each image in 'ready_IC'
   #==========================================================================================================
-  midDate = datetime.strptime(eoUs.period_centre(StartStr, EndStr), "%Y-%m-%d")  
+  midDate = datetime.strptime(eoUs.period_centre(StartStr, EndStr), "%Y-%m-%d")
+
   def image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir):
+    print('\n<image_score> Start scorring for %2d'%(i))
     timestamp  = pd.Timestamp(T).to_pydatetime()
     time_score = get_time_score(timestamp, midDate, SsrData['SSR_CODE'])   
     
     img = ready_IC.isel(time=i)
-    spec_score = get_spec_score(SsrData, img, median_blu, median_nir)
-    
+    spec_score = get_spec_score(SsrData, img, median_blu, median_nir)    
+    print('\n<image_score> Stop scorring for %2d'%(i))
+
     return i, spec_score * time_score
   
   #==========================================================================================================
@@ -558,8 +561,8 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr):
     futures = [executor.submit(image_score, i, T, ready_IC, midDate, SsrData, median_blu, median_nir) for i, T in enumerate(time_vals)]
     
     for future in concurrent.futures.as_completed(futures):
-        i, score = future.result()
-        ready_IC[eoIM.pix_score][i, :,:] = score
+      i, score = future.result()
+      ready_IC[eoIM.pix_score][i, :,:] = score
 
   stop = time.time() 
 
@@ -695,7 +698,8 @@ def get_tile_submosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Sca
                               chunks = {'x': 1000, 'y': 1000},
                               crs    = ProjStr, 
                               resolution = Scale)
-      
+      one_DS.load()
+
       successful_items.append(one_DS)
     except Exception as e:
       continue
@@ -717,8 +721,8 @@ def get_tile_submosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Sca
   #==========================================================================================================
   # Actually load all data from a lazy-loaded dataset into in-memory Numpy arrays
   #==========================================================================================================
-  with ddiag.ProgressBar():
-    xrDS.load()
+  # with ddiag.ProgressBar():
+  #   xrDS.load()
    
 
   print('\n<get_tile_submosaic> loaded xarray dataset:\n', xrDS) 
