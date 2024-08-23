@@ -135,6 +135,7 @@ def get_query_conditions(SsrData, StartStr, EndStr):
 # 
 #############################################################################################################
 def get_View_angles(StacItem):
+  '''StacItem: a item obtained from the STAC catalog at AWS'''
   assets = dict(StacItem.assets.items())
   granule_meta = assets['granule_metadata']
   response = requests.get(granule_meta.href)
@@ -447,7 +448,7 @@ def get_base_Image(Region, ProjStr, Scale, Criteria):
   #==========================================================================================================
   band1 = Criteria['bands'][0]  
   out_xrDS[eoIM.pix_date]  = out_xrDS[band1]
-  #out_xrDS[eoIM.pix_score] = out_xrDS[band1]
+  out_xrDS[eoIM.pix_score] = out_xrDS[band1]
   
   #==========================================================================================================
   # Clip the base image using a bbox with coordinates in the same CRS system as 'out_xrDS'
@@ -780,10 +781,9 @@ def get_granule_mosaic(SsrData, TileItems, StartStr, EndStr, Bands, BaseBBox, Pr
   #==========================================================================================================
   # Remove 'time_index' and 'score' variables from submosaic 
   #==========================================================================================================
-  mosaic = mosaic.drop_vars(['time_index', eoIM.pix_score])
+  mosaic = mosaic.drop_vars(['time_index'])
 
-  pix_date = mosaic[eoIM.pix_date]
-  mosaic = mosaic.where(pix_date > 0)
+  mosaic = mosaic.where(mosaic[eoIM.pix_date] > 0)
   print('<get_granule_mosaic> Data variables of granule mosaic = ', mosaic)
 
   return mosaic
@@ -848,9 +848,7 @@ def period_mosaic(inParams):
     one_granule_mosaic = get_granule_mosaic(SsrData, filtered_items, StartStr, EndStr, criteria['bands'], xy_bbox, ProjStr, Scale, eoIM.EXTRA_NONE)
 
     if one_granule_mosaic is not None:
-      max_spec_val       = xr.apply_ufunc(np.maximum, one_granule_mosaic[SsrData['BLU']], one_granule_mosaic[SsrData['NIR']])
-      one_granule_mosaic = one_granule_mosaic.where(max_spec_val > 0)
-      
+      #max_spec_val       = xr.apply_ufunc(np.maximum, one_granule_mosaic[SsrData['BLU']], one_granule_mosaic[SsrData['NIR']])     
       return one_granule_mosaic
     else:
       return None 
@@ -860,9 +858,14 @@ def period_mosaic(inParams):
     futures = [executor.submit(mosaic_one_granule, granule, stac_items, SsrData, StartStr, EndStr, criteria, xy_bbox, ProjStr, Scale) for granule in unique_granules]    
     count = 0
     for future in concurrent.futures.as_completed(futures):
-      one_tile_mosaic = future.result()
-      if one_tile_mosaic is not None:
-        base_img = base_img.combine_first(one_tile_mosaic)        
+      granule_mosaic = future.result()
+      if granule_mosaic is not None:
+        aligned_granule_mosaic = granule_mosaic.reindex_like(base_img, method="nearest")
+        mask = aligned_granule_mosaic[eoIM.pix_score] > base_img[eoIM.pix_score]
+        for var in base_img.data_vars:
+          base_img[var] = base_img[var].where(~mask, aligned_granule_mosaic[var])
+
+        #base_img = base_img.combine_first(one_tile_mosaic)        
         count += 1
       
       print('\n<<<<<<<<<< Complete %2dth sub mosaic >>>>>>>>>'%(count))
@@ -946,10 +949,10 @@ params = {
     'year': 2023,                # An integer representing image acquisition year
     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
     'months': [7],               # A list of integers represening one or multiple monthes     
-    'tile_names': ['tile55_922'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+    'tile_names': ['tile55_421'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
     'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
-    'resolution': 100,            # Exporting spatial resolution    
-    'out_folder': 'C:/Work_documents/mosaic_tile55_922_2023_Jul_100m',  # the folder name for exporting
+    'resolution': 200,            # Exporting spatial resolution    
+    'out_folder': 'C:/Work_documents/mosaic_tile55_421_2023_Jul_200m',  # the folder name for exporting
     'projection': 'EPSG:3979'   
     
     #'start_date': '2022-06-15',

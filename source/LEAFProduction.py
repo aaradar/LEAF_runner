@@ -197,8 +197,8 @@ def create_LEAF_maps(inParams):
 
     if one_granule_mosaic is not None and one_granule_mosaic.x.size > 0 and one_granule_mosaic.y.size > 0:
       one_granule_mosaic = eoIM.rescale_spec_bands(one_granule_mosaic, SsrData['LEAF_BANDS'], 0.01, 0)
-      max_spec_val       = xr.apply_ufunc(np.maximum, one_granule_mosaic[SsrData['GRN']], one_granule_mosaic[SsrData['NIR']])
-      one_granule_mosaic = one_granule_mosaic.where(max_spec_val > 0)      
+      #max_spec_val       = xr.apply_ufunc(np.maximum, one_granule_mosaic[SsrData['GRN']], one_granule_mosaic[SsrData['NIR']])
+      #one_granule_mosaic = one_granule_mosaic.where(max_spec_val > 0)      
     
       one_tile_params = SL2P_NetsTools.estimate_VParams(inParams, DS_Options, one_granule_mosaic, netID_map)    
       #eoMz.export_mosaic(inParams, one_tile_params)

@@ -23,7 +23,7 @@ def get_CanLC(inYear, Region, Resolution, Projection):
        Year(int or string): A target year.'''
   #==========================================================================================================
   # Obtain landcover collection fromCCMEO DataCube
-  #==========================================================================================================  
+  #==========================================================================================================
   catalog = psc.Client.open(CCMEO_DC_URL)  
   #collection = ccmeo_catalog.get_collection('landcover')
 
