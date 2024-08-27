@@ -464,7 +464,7 @@ def get_base_Image(Region, ProjStr, Scale, Criteria):
   # This step is very import if "combine_first" function is used to merge granule mosaic into based image. 
   #==========================================================================================================
   out_xrDS = out_xrDS*0
-  out_xrDS = out_xrDS.where(out_xrDS > 0)
+  #out_xrDS = out_xrDS.where(out_xrDS > 0)
 
   stop_time = time.time() 
   
