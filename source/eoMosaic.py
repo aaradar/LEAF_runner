@@ -459,9 +459,10 @@ def get_base_Image(Region, ProjStr, Scale, Criteria):
 
   #==========================================================================================================
   # Mask out all the pixels in each variable of "base_img", so they will treated as gap/missing pixels
+  # This step is very import if "combine_first" function is used to merge granule mosaic into based image. 
   #==========================================================================================================
   out_xrDS = out_xrDS*0
-  #out_xrDS = out_xrDS.where(out_xrDS > 0)
+  out_xrDS = out_xrDS.where(out_xrDS > 0)
 
   stop_time = time.time() 
   
@@ -854,18 +855,18 @@ def period_mosaic(inParams):
       return None 
     
   
-  with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+  with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
     futures = [executor.submit(mosaic_one_granule, granule, stac_items, SsrData, StartStr, EndStr, criteria, xy_bbox, ProjStr, Scale) for granule in unique_granules]    
     count = 0
     for future in concurrent.futures.as_completed(futures):
       granule_mosaic = future.result()
       if granule_mosaic is not None:
-        aligned_granule_mosaic = granule_mosaic.reindex_like(base_img, method="nearest")
-        mask = aligned_granule_mosaic[eoIM.pix_score] > base_img[eoIM.pix_score]
-        for var in base_img.data_vars:
-          base_img[var] = base_img[var].where(~mask, aligned_granule_mosaic[var])
+        # granule_mosaic = granule_mosaic.reindex_like(base_img, method="nearest")
+        # mask = granule_mosaic[eoIM.pix_score] > base_img[eoIM.pix_score]
+        # for var in base_img.data_vars:
+        #   base_img[var] = base_img[var].where(~mask, granule_mosaic[var])
 
-        #base_img = base_img.combine_first(one_tile_mosaic)        
+        base_img = base_img.combine_first(granule_mosaic)        
         count += 1
       
       print('\n<<<<<<<<<< Complete %2dth sub mosaic >>>>>>>>>'%(count))
@@ -943,25 +944,25 @@ def export_mosaic(inParams, inMosaic):
 
 
 
-params = {
-    'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
-    'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
-    'year': 2023,                # An integer representing image acquisition year
-    'nbYears': -1,               # positive int for annual product, or negative int for monthly product
-    'months': [7],               # A list of integers represening one or multiple monthes     
-    'tile_names': ['tile55_421'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-    'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
-    'resolution': 200,            # Exporting spatial resolution    
-    'out_folder': 'C:/Work_documents/mosaic_tile55_421_2023_Jul_200m',  # the folder name for exporting
-    'projection': 'EPSG:3979'   
+# params = {
+#     'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
+#     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
+#     'year': 2023,                # An integer representing image acquisition year
+#     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
+#     'months': [7],               # A list of integers represening one or multiple monthes     
+#     'tile_names': ['tile55_421'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+#     'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
+#     'resolution': 200,            # Exporting spatial resolution    
+#     'out_folder': 'C:/Work_documents/mosaic_tile55_421_2023_Jul_200m',  # the folder name for exporting
+#     'projection': 'EPSG:3979'   
     
-    #'start_date': '2022-06-15',
-    #'end_date': '2022-09-15'
-}
+#     #'start_date': '2022-06-15',
+#     #'end_date': '2022-09-15'
+# }
 
-mosaic = period_mosaic(params)
+# mosaic = period_mosaic(params)
 
-export_mosaic(params, mosaic)
+# export_mosaic(params, mosaic)
 
 
 
