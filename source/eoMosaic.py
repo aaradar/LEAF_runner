@@ -427,15 +427,18 @@ def get_base_Image(Region, ProjStr, Scale, Criteria):
   #==========================================================================================================
   # Load the first image based on the boundary box of ROI
   #==========================================================================================================
-  LatLon_bbox = eoUs.get_region_bbox(Region)
+  #LatLon_bbox = eoUs.get_region_bbox(Region)
+  xy_bbox  = eoUs.get_region_bbox(Region, ProjStr)
 
   ds_xr = odc.stac.load([stac_items[0]],
                         bands  = Criteria['bands'],
                         chunks = {'x': 1000, 'y': 1000},
                         crs    = ProjStr, 
-                        bbox   = LatLon_bbox,
+                        #bbox   = LatLon_bbox,
                         fail_on_error = False,
-                        resolution = Scale)
+                        resolution = Scale, 
+                        x = (xy_bbox[0], xy_bbox[2]),
+                        y = (xy_bbox[3], xy_bbox[1]))
   
   # actually load data into memory
   #with ddiag.ProgressBar():
@@ -453,9 +456,8 @@ def get_base_Image(Region, ProjStr, Scale, Criteria):
   #==========================================================================================================
   # Clip the base image using a bbox with coordinates in the same CRS system as 'out_xrDS'
   #==========================================================================================================
-  xy_bbox  = eoUs.get_region_bbox(Region, ProjStr)
-
-  out_xrDS = out_xrDS.sel(x=slice(xy_bbox[0], xy_bbox[2]), y=slice(xy_bbox[3], xy_bbox[1]))
+  #xy_bbox  = eoUs.get_region_bbox(Region, ProjStr)
+  #out_xrDS = out_xrDS.sel(x=slice(xy_bbox[0], xy_bbox[2]), y=slice(xy_bbox[3], xy_bbox[1]))
 
   #==========================================================================================================
   # Mask out all the pixels in each variable of "base_img", so they will treated as gap/missing pixels
@@ -696,7 +698,9 @@ def get_granule_mosaic(SsrData, TileItems, StartStr, EndStr, Bands, BaseBBox, Pr
                               bands  = Bands,
                               chunks = {'x': 1000, 'y': 1000},
                               crs    = ProjStr, 
-                              resolution = Scale)
+                              resolution = Scale,
+                              x = (BaseBBox[0], BaseBBox[2]),
+                              y = (BaseBBox[3], BaseBBox[1]))
       one_DS.load()
 
       successful_items.append(one_DS)
@@ -711,7 +715,7 @@ def get_granule_mosaic(SsrData, TileItems, StartStr, EndStr, Bands, BaseBBox, Pr
   #==========================================================================================================
   # Clip the 'xrDS' based on 'BaseBBox', which is the bbox of final product
   #==========================================================================================================
-  xrDS = xrDS.sel(x=slice(BaseBBox[0], BaseBBox[2]), y=slice(BaseBBox[3], BaseBBox[1]))
+  #xrDS = xrDS.sel(x=slice(BaseBBox[0], BaseBBox[2]), y=slice(BaseBBox[3], BaseBBox[1]))
 
   #==========================================================================================================
   # 
@@ -855,18 +859,18 @@ def period_mosaic(inParams):
       return None 
     
   
-  with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+  with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
     futures = [executor.submit(mosaic_one_granule, granule, stac_items, SsrData, StartStr, EndStr, criteria, xy_bbox, ProjStr, Scale) for granule in unique_granules]    
     count = 0
     for future in concurrent.futures.as_completed(futures):
       granule_mosaic = future.result()
       if granule_mosaic is not None:
-        # granule_mosaic = granule_mosaic.reindex_like(base_img, method="nearest")
-        # mask = granule_mosaic[eoIM.pix_score] > base_img[eoIM.pix_score]
-        # for var in base_img.data_vars:
-        #   base_img[var] = base_img[var].where(~mask, granule_mosaic[var])
+        granule_mosaic = granule_mosaic.reindex_like(base_img, method="nearest")
+        mask = granule_mosaic[eoIM.pix_score] > base_img[eoIM.pix_score]
+        for var in base_img.data_vars:
+          base_img[var] = base_img[var].where(~mask, granule_mosaic[var])
 
-        base_img = base_img.combine_first(granule_mosaic)        
+        #base_img = base_img.combine_first(granule_mosaic)        
         count += 1
       
       print('\n<<<<<<<<<< Complete %2dth sub mosaic >>>>>>>>>'%(count))
