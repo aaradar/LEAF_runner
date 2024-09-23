@@ -954,23 +954,23 @@ def export_mosaic(inParams, inMosaic):
 
 
 
-# params = {
-#     'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
-#     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
-#     'year': 2023,                # An integer representing image acquisition year
-#     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
-#     'months': [7],               # A list of integers represening one or multiple monthes     
-#     'tile_names': ['tile55_421'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-#     'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
-#     'resolution': 200,            # Exporting spatial resolution    
-#     'out_folder': 'C:/Work_documents/mosaic_tile55_421_2023_Jul_200m',  # the folder name for exporting
-#     'projection': 'EPSG:3979'   
+params = {
+    'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
+    'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
+    'year': 2023,                # An integer representing image acquisition year
+    'nbYears': -1,               # positive int for annual product, or negative int for monthly product
+    'months': [7],               # A list of integers represening one or multiple monthes     
+    'tile_names': ['tile55_421'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+    'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
+    'resolution': 200,            # Exporting spatial resolution    
+    'out_folder': 'C:/Work_documents/mosaic_tile55_421_2023_Jul_200m',  # the folder name for exporting
+    'projection': 'EPSG:3979'   
     
-#     #'start_date': '2022-06-15',
-#     #'end_date': '2022-09-15'
-# }
+    #'start_date': '2022-06-15',
+    #'end_date': '2022-09-15'
+}
 
-# mosaic = period_mosaic(params)
+mosaic = period_mosaic(params)
 
 # export_mosaic(params, mosaic)
 

@@ -7,7 +7,7 @@ import eoUtils as eoUs
 import eoImage as eoIM
 
 
-CCMEO_DC_URL =  'https://datacube.services.geo.ca/api'
+CCMEO_DC_URL = 'https://datacube.services.geo.ca/api'
 
 
 #############################################################################################################
