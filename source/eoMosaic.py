@@ -1,3 +1,41 @@
+# import pystac_client
+# import odc.stac
+# import dask.diagnostics as ddiag
+
+
+# DestProj   = 'epsg:3979'
+# geo_region = {'type': 'Polygon', 'coordinates': [[[-76.120,45.184], [-75.383,45.171], [-75.390,45.564], [-76.105,45.568], [-76.120,45.184]]]}
+# #LatLon_bbox = eoUs.get_region_bbox(Region)
+# xy_bbox    = eoUs.get_region_bbox(geo_region, DestProj)
+
+# catalog = pystac_client.Client.open("https://earth-search.aws.element84.com/v1")  # AWS STAC Catalog
+
+# collection = catalog.search(collections = ["sentinel-2-l2a"], 
+#                             intersects  = geo_region,                           
+#                             datetime    = "2021-06-01/2021-06-16", 
+#                             query       = {"eo:cloud_cover": {"lt": 85.0} },
+#                             limit       = 100)
+
+# xrDS = odc.stac.load(list(collection.items()),
+#                       bands         = ['blue', 'green', 'red', 'nir08', 'swir16', 'swir22'],
+#                       chunks        = {'x': 1000, 'y': 1000},
+#                       crs           = DestProj,
+#                       fail_on_error = False,
+#                       resolution    = 20, 
+#                       #bbox         = LatLon_bbox,
+#                       x             = (xy_bbox[0], xy_bbox[2]),
+#                       y             = (xy_bbox[3], xy_bbox[1]))
+  
+# # actually load data into memory
+# with ddiag.ProgressBar():
+#   xrDS.load()
+
+
+
+# max_indices = xrDS[eoIM.pix_score].argmax(dim='time')
+# mosaic      = xrDS.isel(time=max_indices)
+
+
 
 import os
 import math
@@ -256,7 +294,8 @@ def get_unique_tile_names(StacItems):
 
 
 #############################################################################################################
-# Description: This function returns a list of unique STAC items searched for a region and time window.
+# Description: This function returns a list of unique STAC items by remaining only one item from those that 
+#              share the same timestamp.
 #
 # Revision history:  2024-Jul-17  Lixin Sun  Initial creation
 # 
@@ -681,11 +720,14 @@ def get_spec_score(SsrData, inImg, median_blu, median_nir):
 #############################################################################################################
 # Description: This function returns a mosaic image for a sub-region
 #
+# Note:        The baseBBox must be applied; otherwise, there will be artifact lines in the final mosaic
+#              image between different granule mosaic images.
+#
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 #                    2024-Jul-05  Lixin Sun  Added imaging angle bands to each item/image 
 #
 #############################################################################################################
-def get_granule_mosaic(SsrData, TileItems, StartStr, EndStr, Bands, BaseBBox, ProjStr, Scale, ExtraBandCode):
+def get_granule_mosaic(SsrData, TileItems, StartStr, EndStr, Bands, ProjStr, Scale, ExtraBandCode):
   '''
      Args:
        SsrData(Dictionary): Some meta data on a used satellite sensor;
@@ -698,9 +740,9 @@ def get_granule_mosaic(SsrData, TileItems, StartStr, EndStr, Bands, BaseBBox, Pr
                               bands  = Bands,
                               chunks = {'x': 1000, 'y': 1000},
                               crs    = ProjStr, 
-                              resolution = Scale,
-                              x = (BaseBBox[0], BaseBBox[2]),
-                              y = (BaseBBox[3], BaseBBox[1]))
+                              resolution = Scale)
+                              #x = (BaseBBox[0], BaseBBox[2]),     #BaseBBox must be applied; otherwise, there will be artifact lines
+                              #y = (BaseBBox[3], BaseBBox[1]))     #in the final mosaic image between different granule mosaic images. 
       one_DS.load()
 
       successful_items.append(one_DS)
@@ -845,12 +887,12 @@ def period_mosaic(inParams):
   #==========================================================================================================
   # Obtain the bbox in projected CRS system (x and y, rather than Lat and Lon)
   #==========================================================================================================  
-  xy_bbox = eoUs.get_region_bbox(Region, ProjStr)
+  #xy_bbox = eoUs.get_region_bbox(Region, ProjStr)
 
-  def mosaic_one_granule(granule_name, stac_items, SsrData, StartStr, EndStr, criteria, xy_bbox, ProjStr, Scale):
+  def mosaic_one_granule(granule_name, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale):
     one_granule_items  = get_one_granule_items(stac_items, granule_name)  # Extract a list of items based on an unique tile name
-    filtered_items     = get_unique_STAC_items(one_granule_items)
-    one_granule_mosaic = get_granule_mosaic(SsrData, filtered_items, StartStr, EndStr, criteria['bands'], xy_bbox, ProjStr, Scale, eoIM.EXTRA_NONE)
+    filtered_items     = get_unique_STAC_items(one_granule_items) #Remain only one item from those that share the same timestamp
+    one_granule_mosaic = get_granule_mosaic(SsrData, filtered_items, StartStr, EndStr, criteria['bands'], ProjStr, Scale, eoIM.EXTRA_NONE)
 
     if one_granule_mosaic is not None:
       #max_spec_val       = xr.apply_ufunc(np.maximum, one_granule_mosaic[SsrData['BLU']], one_granule_mosaic[SsrData['NIR']])     
@@ -858,17 +900,18 @@ def period_mosaic(inParams):
     else:
       return None 
     
+  #return mosaic_one_granule(unique_granules[10], stac_items, SsrData, StartStr, EndStr, criteria, xy_bbox, ProjStr, Scale)
   
   with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-    futures = [executor.submit(mosaic_one_granule, granule, stac_items, SsrData, StartStr, EndStr, criteria, xy_bbox, ProjStr, Scale) for granule in unique_granules]    
+    futures = [executor.submit(mosaic_one_granule, granule, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale) for granule in unique_granules]    
     count = 0
     for future in concurrent.futures.as_completed(futures):
       granule_mosaic = future.result()
       if granule_mosaic is not None:
-        granule_mosaic = granule_mosaic.reindex_like(base_img, method="nearest")
+        granule_mosaic = granule_mosaic.reindex_like(base_img)   # do not apply any value to "method" parameter, just default value
         mask = granule_mosaic[eoIM.pix_score] > base_img[eoIM.pix_score]
         for var in base_img.data_vars:
-          base_img[var] = base_img[var].where(~mask, granule_mosaic[var])
+          base_img[var] = base_img[var].where(~mask, granule_mosaic[var], True)
 
         #base_img = base_img.combine_first(granule_mosaic)        
         count += 1
@@ -954,23 +997,23 @@ def export_mosaic(inParams, inMosaic):
 
 
 
-params = {
-    'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
-    'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
-    'year': 2023,                # An integer representing image acquisition year
-    'nbYears': -1,               # positive int for annual product, or negative int for monthly product
-    'months': [7],               # A list of integers represening one or multiple monthes     
-    'tile_names': ['tile55_421'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-    'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
-    'resolution': 200,            # Exporting spatial resolution    
-    'out_folder': 'C:/Work_documents/mosaic_tile55_421_2023_Jul_200m',  # the folder name for exporting
-    'projection': 'EPSG:3979'   
+# params = {
+#     'sensor': 'S2_SR',           # A sensor type string (e.g., 'S2_SR' or 'L8_SR' or 'MOD_SR')
+#     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
+#     'year': 2023,                # An integer representing image acquisition year
+#     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
+#     'months': [7],               # A list of integers represening one or multiple monthes     
+#     'tile_names': ['tile55_421'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+#     'prod_names': ['mosaic'],    #['mosaic', 'LAI', 'fCOVER', ]    
+#     'resolution': 200,            # Exporting spatial resolution    
+#     'out_folder': 'C:/Work_documents/mosaic_tile55_421_2023_Jul_200m',  # the folder name for exporting
+#     'projection': 'EPSG:3979'   
     
-    #'start_date': '2022-06-15',
-    #'end_date': '2022-09-15'
-}
+#     #'start_date': '2022-06-15',
+#     #'end_date': '2022-09-15'
+# }
 
-mosaic = period_mosaic(params)
+# mosaic = period_mosaic(params)
 
 # export_mosaic(params, mosaic)
 
