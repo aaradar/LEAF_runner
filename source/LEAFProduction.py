@@ -40,12 +40,8 @@ def create_LEAF_maps(inParams):
   #==========================================================================================================
   # Validate input parameters
   #==========================================================================================================
-  if len(inParams['current_tile']) < 6: #Ensure the existence of a valid 'current_tile' item
+  if len(inParams['current_region']) < 6: #Ensure the existence of a valid 'current_region' item
     print('<create_LEAF_maps> Invalid <current_tile> item in parameter dictionary!')
-    return None
-  
-  if len(str(inParams['current_month'])) < 1: #Ensure the existence of a valid 'current_month' item
-    print('<create_LEAF_maps> Invalid <current_month> item in parameter dictionary!')
     return None
   
   #==========================================================================================================
@@ -304,17 +300,35 @@ def LEAF_production(inExeParams):
   print('<LEAF_production> All input parameters = ', Params) 
 
   #==========================================================================================================
-  # Deal with customized region/time period and regular tile 
+  # Produce vegetation parameter porducts for eath region and each time window
   #==========================================================================================================
-  if eoPM.is_custom_region(Params) == True or eoPM.is_custom_window(Params) == True:   
-    # There is a customized spatial region specified in Parameter dictionary 
-    print('\n<LEAF_production> Calling custom_composite function......')
-    custom_LEAF_production(Params)
+  region_names = Params['regions'].keys()
+  nTimes       = len(Params['start_dates'])
 
-  else: 
-    # There is neither customized region nor customized compositing period defined in Parameter dictionary 
-    print('\n<LEAF_production> Calling tile_composite function......')
-    tile_LEAF_production(Params)  
+  for reg_name in region_names:
+    Params = eoPM.set_spatial_region(Params, reg_name)
+
+    # Produce vegetation parameter porducts for each time window
+    for TIndex in range(nTimes):
+      Params = eoPM.set_current_time(Params, TIndex)
+
+      # Produce and export products in a specified way (a compact image or separate images)      
+      out_style = str(Params['export_style']).lower()
+      if out_style.find('comp') > -1:
+        print('\n<LEAF_production> Generate and export biophysical maps in one file .......')
+        #out_params = compact_params(mosaic, SsrData, ClassImg)
+
+        # Export the 64-bits image to either GD or GCS
+        #export_compact_params(fun_Param_dict, region, out_params, task_list)
+
+      else: 
+        # Produce and export vegetation parameetr maps for a time period and a region
+        print('\n<tile_LEAF_production> Generate and export separate vegetation biophysical maps......')        
+        VBP_maps = create_LEAF_maps(Params)
+      
+        # Export results for ONE tile and ONE month/season        
+        export_VegParamMaps(Params, VBP_maps)   
+
     
 
 
@@ -325,12 +339,11 @@ def LEAF_production(inExeParams):
 #     'year': 2023,                # An integer representing image acquisition year
 #     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
 #     'months': [8],               # A list of integers represening one or multiple monthes     
-#     'tile_names': ['tile55_922'],    # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-#     'prod_names': ['LAI', 'fCOVER'],    #['mosaic', 'LAI', 'fCOVER', ]    
-#     'resolution': 400,            # Exporting spatial resolution    
-#     'out_folder': 'C:/Work_documents/LEAF_tile55_922_2023_400m',  # the folder name for exporting
-#     'projection': 'EPSG:3979'   
-    
+#     'tile_names': ['tile55_922'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+#     'prod_names': ['LAI', 'fCOVER', 'fAPAR', 'Albedo'],    #['mosaic', 'LAI', 'fCOVER', ]    
+#     'resolution': 200,            # Exporting spatial resolution    
+#     'out_folder': 'C:/Work_documents/LEAF_tile55_2023_922_Aug_200m_new',  # the folder name for exporting
+#     'projection': 'EPSG:3979',    
 #     #'start_date': '2022-06-15',
 #     #'end_date': '2022-09-15'
 # }

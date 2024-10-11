@@ -381,7 +381,7 @@ CAN_SUBTILES = {
 #############################################################################################################
 def valid_tile_name(inTileName):
   tile_name = str(inTileName)
-  name_len = len(tile_name)
+  name_len  = len(tile_name)
 
   if name_len > 7:
     tile_names = CAN_SUBTILES.keys()    
