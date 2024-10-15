@@ -2,7 +2,6 @@ import os
 import pystac_client as psc
 import odc.stac
 
-import eoParams as eoPM
 import eoUtils as eoUs
 import eoImage as eoIM
 

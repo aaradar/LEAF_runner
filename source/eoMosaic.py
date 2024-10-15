@@ -733,7 +733,7 @@ def get_granule_mosaic(SsrData, GranuleItems, StartStr, EndStr, Bands, ProjStr, 
     try:
       one_DS = odc.stac.load([item_ID],
                               bands  = Bands,
-                              chunks = {'x': 1000, 'y': 1000},
+                              chunks = {'x': 2000, 'y': 2000},
                               crs    = ProjStr, 
                               resolution = Scale)
       one_DS.load()
@@ -752,7 +752,7 @@ def get_granule_mosaic(SsrData, GranuleItems, StartStr, EndStr, Bands, ProjStr, 
   #==========================================================================================================
   # xrDS = odc.stac.load([GranuleItems],
   #                      bands  = Bands,
-  #                      chunks = {'x': 1000, 'y': 1000},
+  #                      chunks = {'x': 2000, 'y': 2000},
   #                      crs    = ProjStr, 
   #                      resolution = Scale)
   # xrDS.load()
@@ -898,8 +898,10 @@ def period_mosaic(inParams, ExtraBandCode):
 
   #test_mosaic = mosaic_one_granule(unique_granules[10], stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale)
   #return test_mosaic
-  
-  with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+  cpu_cores = os.cpu_count()/2
+  print('\n\n The numb of CPU cores = ', cpu_cores)
+
+  with concurrent.futures.ThreadPoolExecutor(max_workers=cpu_cores) as executor:
     futures = [executor.submit(mosaic_one_granule, granule, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale) for granule in unique_granules]
     count = 0
     for future in concurrent.futures.as_completed(futures):

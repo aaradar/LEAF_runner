@@ -194,7 +194,7 @@ def export_VegParamMaps(inParams, inXrDS):
   # Create prefix filename
   #==========================================================================================================
   SsrData    = eoIM.SSR_META_DICT[str(inParams['sensor'])]   
-  region_str = str(inParams['region_str'])
+  region_str = str(inParams['current_region'])
   period_str = str(inParams['time_str'])
  
   filePrefix = f"{SsrData['NAME']}_{region_str}_{period_str}"
