@@ -135,14 +135,16 @@ def set_current_time(inParams, current_time):
 #
 #############################################################################################################
 def set_spatial_region(inParams, region_name):
+  print('\n\n<set_spatial_region> the given parameters = ', inParams) 
   if 'regions' not in inParams:
     print('\n<set_spatial_region> There is no \'regions\' key!')
     return None
   
   region_names = inParams['regions'].keys()
+  print('<set_spatial_region> All region names = ', region_names)  
 
   if region_name not in region_names:
-    print('\n<set_spatial_region> Invalid region name!')
+    print('<set_spatial_region> {} is an invalid tile name!'.format(region_name))
     return None
     
   inParams['current_region'] = region_name
@@ -346,8 +348,8 @@ def form_time_windows(inParams):
 #############################################################################################################
 def form_spatial_regions(inParams):
   if not has_custom_region(inParams):
-    for tile_name in inParams['tile_names']:
-      inParams['regions'] = {}
+    inParams['regions'] = {}
+    for tile_name in inParams['tile_names']:      
       if eoTG.valid_tile_name(tile_name):
         inParams['regions'][tile_name] = eoTG.get_tile_polygon(tile_name)
     
