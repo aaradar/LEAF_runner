@@ -80,6 +80,13 @@ from collections import defaultdict
 
 odc.stac.configure_rio(cloud_defaults = True, GDAL_HTTP_UNSAFESSL = 'YES')
 
+dask.config.set({
+  'distributed.worker.memory.target': 0.6,  # Spill to disk when 60% memory is used
+  'distributed.worker.memory.spill': 0.7,   # Start spilling to disk at 70%
+  'distributed.worker.memory.pause': 0.8,   # Pause computation at 80%
+  'distributed.worker.memory.terminate': 0.95  # Terminate at 95% usage
+})
+
 # Set the temporary directory for Dask
 #dask.config.set({'temporary-directory': 'M:/Dask_tmp'})
 
@@ -186,44 +193,59 @@ def get_query_conditions(SsrData, StartStr, EndStr):
 # 
 #############################################################################################################
 def get_View_angles(StacItem):
+  # Create a custom adapter with retry settings
+  # session = requests.Session()
+  # retry_strategy = requests.adapters.Retry(total=3, backoff_factor=1)
+  # session.mount('http://', retry_strategy)
+
   '''StacItem: a item obtained from the STAC catalog at AWS'''
   assets = dict(StacItem.assets.items())
   granule_meta = assets['granule_metadata']
-  response = requests.get(granule_meta.href)
-  #response = requests.get(granule_meta.href, verify=False)
-  response.raise_for_status()  # Check that the request was successful
 
-  # Parse the XML content
-  root = ET.fromstring(response.content)
-  
   view_angles = {}
-  elem = root.find(".//Mean_Viewing_Incidence_Angle[@bandId='8']")
-  view_angles['vza'] = float(elem.find('ZENITH_ANGLE').text)
-  view_angles['vaa'] = float(elem.find('AZIMUTH_ANGLE').text)    
+  try:
+    response = requests.get(granule_meta.href)
+    #response = session.get(granule_meta.href)
+    response.raise_for_status()  # Check that the request was successful
+
+    # Parse the XML content
+    root = ET.fromstring(response.content)  
+    
+    elem = root.find(".//Mean_Viewing_Incidence_Angle[@bandId='8']")
+    view_angles['vza'] = float(elem.find('ZENITH_ANGLE').text)
+    view_angles['vaa'] = float(elem.find('AZIMUTH_ANGLE').text)
+
+  except Exception as e:
+    view_angles['vza'] = 0.0
+    view_angles['vaa'] = 0.0
   
   return view_angles
    
 
 
 
+def display_meta_assets(stac_items, First):
+  if First == True:
+    first_item = stac_items[0]
 
-def display_meta_assets(stac_items):
-  first_item = stac_items[0]
+    print('<<<<<<< The assets associated with an item >>>>>>>\n' )
+    for asset_key, asset in first_item.assets.items():
+      #print(f"Band: {asset_key}, Description: {asset.title or 'No title'}")
+      print(f"Asset key: {asset_key}, title: {asset.title}, href: {asset.href}")    
 
-  print('<<<<<<< The assets associated with an item >>>>>>>\n' )
-  for asset_key, asset in first_item.assets.items():
-    #print(f"Band: {asset_key}, Description: {asset.title or 'No title'}")
-    print(f"Asset key: {asset_key}, title: {asset.title}, href: {asset.href}")    
+    print('<<<<<<< The meta data associated with an item >>>>>>>\n' )
+    print("ID:", first_item.id)
+    print("Geometry:", first_item.geometry)
+    print("Bounding Box:", first_item.bbox)
+    print("Datetime:", first_item.datetime)
+    print("Properties:")
 
-  print('<<<<<<< The meta data associated with an item >>>>>>>\n' )
-  print("ID:", first_item.id)
-  print("Geometry:", first_item.geometry)
-  print("Bounding Box:", first_item.bbox)
-  print("Datetime:", first_item.datetime)
-  print("Properties:")
-
-  for key, value in first_item.properties.items():
-    print(f"  <{key}>: {value}")
+    for key, value in first_item.properties.items():
+      print(f"  <{key}>: {value}")
+  else:
+    for item in stac_items:
+      properties = item.properties
+      print("ID: {}; vza: {}; vaa: {}".format(item.id, properties['vza'], properties['vaa']))
 
 
 
@@ -379,38 +401,25 @@ def ingest_Geo_Angles(StacItems, ExtraBandCode):
   def process_item(item, ExtraBandCode):
     item.properties['sza'] = 90.0 - item.properties['view:sun_elevation']
     item.properties['saa'] = item.properties['view:sun_azimuth']
-     
-    if ExtraBandCode == eoIM.EXTRA_ANGLE:
-      view_angles = get_View_angles(item)      
-      item.properties['vza'] = view_angles['vza']
-      item.properties['vaa'] = view_angles['vaa']
-
-    else:
-      item.properties['vza'] = 0.0
-      item.properties['vaa'] = 0.0
+ 
+    view_angles = get_View_angles(item)      
+    item.properties['vza'] = view_angles['vza']
+    item.properties['vaa'] = view_angles['vaa']
     
     return item
   
-  # investigate if there is other library for parallel for this part
+  #==========================================================================================================
+  # Attach imaging geometry angles as properties to each STAC item 
+  #==========================================================================================================  
   out_items = []
+  # for item in StacItems:
+  #   new_item = process_item(item, ExtraBandCode)
+  #   out_items.append(new_item)
+
   with concurrent.futures.ThreadPoolExecutor() as executor:
     futures = [executor.submit(process_item, item, ExtraBandCode) for item in StacItems]
     for future in concurrent.futures.as_completed(futures):
       out_items.append(future.result())
-
-  #==========================================================================================================
-  # 
-  #==========================================================================================================  
-  #out_items = [] 
-  #for item in StacItems:
-  #  view_angles = get_View_angles(item)
-    
-  #  item.properties['sza'] = 90.0 - item.properties['view:sun_elevation']
-  #  item.properties['saa'] = item.properties['view:sun_azimuth']
-  #  item.properties['vza'] = view_angles['vza']
-  #  item.properties['vaa'] = view_angles['vaa']
-
-  #  out_items.append(item)
   
   endT   = time.time()
   totalT = (endT - startT)/60
@@ -500,10 +509,10 @@ def get_base_Image(StacItems, Region, ProjStr, Scale, Criteria, ExtraBandCode):
   out_xrDS[eoIM.pix_score] = out_xrDS[band1]
   
   if int(ExtraBandCode) == eoIM.EXTRA_ANGLE:
-    out_xrDS['cosSZA']  = out_xrDS[band1]
-    out_xrDS['cosVZA']  = out_xrDS[band1]
-    out_xrDS['cosRAA']  = out_xrDS[band1]
-
+    out_xrDS['cosSZA'] = out_xrDS[band1]
+    out_xrDS['cosVZA'] = out_xrDS[band1]
+    out_xrDS['cosRAA'] = out_xrDS[band1]
+  
   #==========================================================================================================
   # Mask out all the pixels in each variable of "base_img", so they will treated as gap/missing pixels
   # This step is very import if "combine_first" function is used to merge granule mosaic into based image. 
@@ -721,68 +730,66 @@ def get_spec_score(SsrData, inImg, median_blu, median_nir):
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 # 
 #############################################################################################################
-@dask.delayed
-def chunk_mosaic(chunk, SsrData, StartStr, EndStr, GranuleItems, ExtraBandCode, time_values):
-  # SsrData       = Packed_params['SsrData']
-  # StartStr      = Packed_params['Start']
-  # EndStr        = Packed_params['End']
-  # GranuleItems  = Packed_params['Items']
-  # ExtraBandCode = Packed_params['ExtraBandCode']
+# @dask.delayed
+# def chunk_mosaic(chunk, SsrData, StartStr, EndStr, GranuleItems, ExtraBandCode, time_values):
+#   # SsrData       = Packed_params['SsrData']
+#   # StartStr      = Packed_params['Start']
+#   # EndStr        = Packed_params['End']
+#   # GranuleItems  = Packed_params['Items']
+#   # ExtraBandCode = Packed_params['ExtraBandCode']
 
-  #==========================================================================================================
-  # Attach three layers, an empty 'score', acquisition DOY and 'time_index', to eath item/image in "xrDS" 
-  #==========================================================================================================  
-  #xrDS['time'] = pd.to_datetime(xrDS['time'].values)
-  time_datetime = pd.to_datetime(time_values)
-  doys = [date.timetuple().tm_yday for date in time_datetime]  #Calculate DOYs for every temporal point
+#   #==========================================================================================================
+#   # Attach three layers, an empty 'score', acquisition DOY and 'time_index', to eath item/image in "xrDS" 
+#   #==========================================================================================================  
+#   #xrDS['time'] = pd.to_datetime(xrDS['time'].values)
+#   time_datetime = pd.to_datetime(time_values)
+#   doys = [date.timetuple().tm_yday for date in time_datetime]  #Calculate DOYs for every temporal point
 
-  chunk[eoIM.pix_score] = chunk[SsrData['BLU']]*0
-  chunk[eoIM.pix_date]  = xr.DataArray(np.array(doys, dtype='uint16'), dims=['time'])
-  chunk['time_index']   = xr.DataArray(np.array(range(0, len(time_values)), dtype='uint8'), dims=['time'])
+#   chunk[eoIM.pix_score] = chunk[SsrData['BLU']]*0
+#   chunk[eoIM.pix_date]  = xr.DataArray(np.array(doys, dtype='uint16'), dims=['time'])
+#   chunk['time_index']   = xr.DataArray(np.array(range(0, len(time_values)), dtype='uint8'), dims=['time'])
   
-  #==========================================================================================================
-  # Apply default pixel mask, rescaling gain and offset to each image in 'chunk'
-  #==========================================================================================================
-  chunk = eoIM.apply_default_mask(chunk, SsrData)
-  chunk = eoIM.apply_gain_offset(chunk, SsrData, 100, False)
+#   #==========================================================================================================
+#   # Apply default pixel mask, rescaling gain and offset to each image in 'chunk'
+#   #==========================================================================================================
+#   chunk = eoIM.apply_default_mask(chunk, SsrData)
+#   chunk = eoIM.apply_gain_offset(chunk, SsrData, 100, False)
 
-  #==========================================================================================================
-  # Calculate compositing scores for every valid pixel in xarray dataset object (chunk)
-  #==========================================================================================================
-  chunk, score_time = attach_score(SsrData, chunk, StartStr, EndStr)
+#   #==========================================================================================================
+#   # Calculate compositing scores for every valid pixel in xarray dataset object (chunk)
+#   #==========================================================================================================
+#   chunk, score_time = attach_score(SsrData, chunk, StartStr, EndStr)
 
-  #print('<chunk_mosaic> Complete pixel scoring, elapsed time = %6.2f minutes'%(score_time)) 
+#   #print('<chunk_mosaic> Complete pixel scoring, elapsed time = %6.2f minutes'%(score_time)) 
 
-  #==========================================================================================================
-  # Create a composite image based on compositing scores
-  # Note: calling "fillna" function before invaking "argmax" function is very important!!!
-  #==========================================================================================================
-  chunk       = chunk.fillna(-0.0001)
+#   #==========================================================================================================
+#   # Create a composite image based on compositing scores
+#   # Note: calling "fillna" function before invaking "argmax" function is very important!!!
+#   #==========================================================================================================
+#   chunk       = chunk.fillna(-0.0001)
 
-  max_indices = chunk[eoIM.pix_score].argmax(dim='time')
-  mosaic      = chunk.isel(time=max_indices)
+#   max_indices = chunk[eoIM.pix_score].argmax(dim='time')
+#   mosaic      = chunk.isel(time=max_indices)
 
-  #elif extra_code == eoIM.EXTRA_NDVI:
-  #  chunk = eoIM.attach_NDVIBand(chunk, SsrData)
-  #==========================================================================================================
-  # Attach an additional bands as necessary 
-  #==========================================================================================================
-  extra_code = int(ExtraBandCode)
-  if extra_code == eoIM.EXTRA_ANGLE:
-    mosaic = eoIM.attach_AngleBands(mosaic, GranuleItems)
-    #mosaic = mosaic.drop_vars(['blue','scl'])    
+#   #elif extra_code == eoIM.EXTRA_NDVI:
+#   #  chunk = eoIM.attach_NDVIBand(chunk, SsrData)
+#   #==========================================================================================================
+#   # Attach an additional bands as necessary 
+#   #==========================================================================================================
+#   extra_code = int(ExtraBandCode)
+#   if extra_code == eoIM.EXTRA_ANGLE:
+#     mosaic = eoIM.attach_AngleBands(mosaic, GranuleItems)
+#     #mosaic = mosaic.drop_vars(['blue','scl'])    
 
-  #==========================================================================================================
-  # Remove 'time_index' and 'score' variables from submosaic 
-  #==========================================================================================================
-  mosaic = mosaic.drop_vars(['time_index'])
+#   #==========================================================================================================
+#   # Remove 'time_index' and 'score' variables from submosaic 
+#   #==========================================================================================================
+#   mosaic = mosaic.drop_vars(['time_index'])
 
-  mosaic = mosaic.where(mosaic[eoIM.pix_date] > 0)
-  #print('<chunk_mosaic> Data variables of granule mosaic = ', mosaic.data_vars)
+#   mosaic = mosaic.where(mosaic[eoIM.pix_date] > 0)
+#   #print('<chunk_mosaic> Data variables of granule mosaic = ', mosaic.data_vars)
 
-  return mosaic
-
-
+#   return mosaic
 
 
 
@@ -797,42 +804,42 @@ def chunk_mosaic(chunk, SsrData, StartStr, EndStr, GranuleItems, ExtraBandCode, 
 #                    2024-Jul-05  Lixin Sun  Added imaging angle bands to each item/image 
 #
 #############################################################################################################
-def get_granule_mosaic_test(SsrData, GranuleItems, StartStr, EndStr, Bands, ProjStr, Scale, ExtraBandCode):
-  '''
-     Args:
-       SsrData(Dictionary): Some meta data on a used satellite sensor;
-       TileItems(List): A list of STAC items associated with a specific tile;
-       ExtraBandCode(Int): An integer indicating if to attach extra bands to mosaic image.'''
+# def get_granule_mosaic_test(SsrData, GranuleItems, StartStr, EndStr, Bands, ProjStr, Scale, ExtraBandCode):
+#   '''
+#      Args:
+#        SsrData(Dictionary): Some meta data on a used satellite sensor;
+#        TileItems(List): A list of STAC items associated with a specific tile;
+#        ExtraBandCode(Int): An integer indicating if to attach extra bands to mosaic image.'''
     
-  successful_items = []
-  for item_ID in GranuleItems:
-    try:
-      one_DS = odc.stac.load([item_ID],
-                              bands  = Bands,
-                              chunks = {'x': 500, 'y': 500},
-                              crs    = ProjStr, 
-                              resolution = Scale)
-      one_DS.load()
+#   successful_items = []
+#   for item_ID in GranuleItems:
+#     try:
+#       one_DS = odc.stac.load([item_ID],
+#                               bands  = Bands,
+#                               chunks = {'x': 500, 'y': 500},
+#                               crs    = ProjStr, 
+#                               resolution = Scale)
+#       one_DS.load()
 
-      successful_items.append(one_DS)
-    except Exception as e:
-      continue
+#       successful_items.append(one_DS)
+#     except Exception as e:
+#       continue
   
-  if not successful_items:
-    return None
+#   if not successful_items:
+#     return None
   
-  xrDS = xr.concat(successful_items, dim='time')
+#   xrDS = xr.concat(successful_items, dim='time')
   
-  print("\n<get_granule_mosaic> Time Dimension Values:")
-  time_values = xrDS.coords['time'].values  
-  for t in time_values:
-    print(t)
+#   print("\n<get_granule_mosaic> Time Dimension Values:")
+#   time_values = xrDS.coords['time'].values  
+#   for t in time_values:
+#     print(t)
 
-  results = xrDS.map_blocks(chunk_mosaic, args = [SsrData, StartStr, EndStr, GranuleItems, ExtraBandCode, time_values])
+#   results = xrDS.map_blocks(chunk_mosaic, args = [SsrData, StartStr, EndStr, GranuleItems, ExtraBandCode, time_values])
 
-  granule_mosaic = results.compute()
+#   granule_mosaic = results.compute()
   
-  return granule_mosaic
+#   return granule_mosaic
 
 
 
@@ -848,6 +855,7 @@ def get_granule_mosaic(granule_name, stac_items, SsrData, StartStr, EndStr, Band
   
   one_granule_items = get_one_granule_items(stac_items, granule_name)  # Extract a list of items based on an unique tile name
   filtered_items    = get_unique_STAC_items(one_granule_items)         # Remain only one item from those that share the same timestamp
+  #display_meta_assets(filtered_items, False) 
 
   successful_items = []
   for item_ID in filtered_items:
@@ -936,17 +944,6 @@ def get_granule_mosaic(granule_name, stac_items, SsrData, StartStr, EndStr, Band
 
   return mosaic
 
-  
-
-
-
-# @dask.delayed
-# def mosaic_one_granule(granule_name, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, ExtraBandCode):
-#   one_granule_items = get_one_granule_items(stac_items, granule_name)  # Extract a list of items based on an unique tile name
-#   filtered_items    = get_unique_STAC_items(one_granule_items)         # Remain only one item from those that share the same timestamp
-
-#   return get_granule_mosaic(SsrData, filtered_items, StartStr, EndStr, criteria['bands'], ProjStr, Scale, ExtraBandCode)
-
 
 
 
@@ -1015,7 +1012,7 @@ def period_mosaic(inParams, ExtraBandCode):
   stac_items = search_STAC_Catalog(Region, criteria, 100, ExtraBandCode)
 
   print(f"\n<period_mosaic> A total of {len(stac_items):d} items were found.\n")
-  display_meta_assets(stac_items)
+  display_meta_assets(stac_items, False)
   
   #mosaic = collection_mosaic(stac_items, inParams, ExtraBandCode)
   #==========================================================================================================
@@ -1032,7 +1029,7 @@ def period_mosaic(inParams, ExtraBandCode):
   unique_granules = get_unique_tile_names(stac_items)  #Get all unique tile names 
   print('\n<<<<<< The number of unique granule tiles = %d'%(len(unique_granules)))  
   print('\n<<<<<< The unique granule tiles = ', unique_granules) 
-
+  
   #==========================================================================================================
   # Obtain the bbox in projected CRS system (x and y, rather than Lat and Lon)
   #==========================================================================================================

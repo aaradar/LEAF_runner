@@ -47,8 +47,7 @@ def create_LEAF_maps(inParams):
   #==========================================================================================================
   # Get a list of unique granule names
   #==========================================================================================================
-  mosaic = eoMz.period_mosaic(inParams, eoIM.EXTRA_NONE)
-  #mosaic = eoMz.period_mosaic(inParams, eoIM.EXTRA_ANGLE)
+  mosaic = eoMz.period_mosaic(inParams, eoIM.EXTRA_ANGLE)
   print('\n<create_LEAF_maps> The bands in mosaic image:', mosaic.data_vars)
 
   #==========================================================================================================
