@@ -190,6 +190,7 @@ def get_View_angles(StacItem):
   assets = dict(StacItem.assets.items())
   granule_meta = assets['granule_metadata']
   response = requests.get(granule_meta.href)
+  #response = requests.get(granule_meta.href, verify=False)
   response.raise_for_status()  # Check that the request was successful
 
   # Parse the XML content
@@ -235,7 +236,7 @@ def display_meta_assets(stac_items):
 #                                            identical timestamps.
 #
 #############################################################################################################
-def search_STAC_Catalog(Region, Criteria, MaxImgs):
+def search_STAC_Catalog(Region, Criteria, MaxImgs, ExtraBandCode):
   '''
     Args:
       Region(): A spatial region;
@@ -260,8 +261,8 @@ def search_STAC_Catalog(Region, Criteria, MaxImgs):
     
   #==========================================================================================================
   # Ingest imaging geometry angles into each STAC item
-  #==========================================================================================================
-  stac_items, angle_time = ingest_Geo_Angles(stac_items)
+  #==========================================================================================================  
+  stac_items, angle_time = ingest_Geo_Angles(stac_items, ExtraBandCode)
   print('\n<search_STAC_Catalog> The total elapsed time for ingesting angles = %6.2f minutes'%(angle_time))
 
   return stac_items
@@ -366,7 +367,7 @@ def get_one_granule_items(StacItems, GranuleName):
 
 
 
-def ingest_Geo_Angles(StacItems):
+def ingest_Geo_Angles(StacItems, ExtraBandCode):
   startT = time.time()
   #==========================================================================================================
   # Confirm the given item list is not empty
@@ -375,20 +376,25 @@ def ingest_Geo_Angles(StacItems):
   if nItems < 1:
     return None
   
-  def process_item(item):
-    view_angles = get_View_angles(item)
-    
+  def process_item(item, ExtraBandCode):
     item.properties['sza'] = 90.0 - item.properties['view:sun_elevation']
     item.properties['saa'] = item.properties['view:sun_azimuth']
-    item.properties['vza'] = view_angles['vza']
-    item.properties['vaa'] = view_angles['vaa']
+     
+    if ExtraBandCode == eoIM.EXTRA_ANGLE:
+      view_angles = get_View_angles(item)      
+      item.properties['vza'] = view_angles['vza']
+      item.properties['vaa'] = view_angles['vaa']
+
+    else:
+      item.properties['vza'] = 0.0
+      item.properties['vaa'] = 0.0
     
     return item
   
   # investigate if there is other library for parallel for this part
   out_items = []
   with concurrent.futures.ThreadPoolExecutor() as executor:
-    futures = [executor.submit(process_item, item) for item in StacItems]
+    futures = [executor.submit(process_item, item, ExtraBandCode) for item in StacItems]
     for future in concurrent.futures.as_completed(futures):
       out_items.append(future.result())
 
@@ -1006,7 +1012,7 @@ def period_mosaic(inParams, ExtraBandCode):
   #           a server internal error will be triggered.
   #       (2) The imaging angles have been attached to each STAC item by "search_STAC_Catalog" function.
   #==========================================================================================================  
-  stac_items = search_STAC_Catalog(Region, criteria, 100)
+  stac_items = search_STAC_Catalog(Region, criteria, 100, ExtraBandCode)
 
   print(f"\n<period_mosaic> A total of {len(stac_items):d} items were found.\n")
   display_meta_assets(stac_items)
@@ -1088,7 +1094,7 @@ def period_mosaic_old(inParams, ExtraBandCode):
   #           a server internal error will be triggered.
   #       (2) The imaging angles have been attached to each STAC item by "search_STAC_Catalog" function.
   #==========================================================================================================  
-  stac_items = search_STAC_Catalog(Region, criteria, 100)
+  stac_items = search_STAC_Catalog(Region, criteria, 100, ExtraBandCode)
 
   print(f"\n<period_mosaic> A total of {len(stac_items):d} items were found.\n")
   display_meta_assets(stac_items)
