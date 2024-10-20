@@ -965,6 +965,56 @@ def merge_granule_mosaics(granule_mosaics, base_img):
 
 
 
+def merge_one_granule_mosaic(granule_mosaic, base_img):
+  granule_mosaic = granule_mosaic.reindex_like(base_img)   # do not apply any value to "method" parameter, just default value
+  mask = granule_mosaic[eoIM.pix_score] > base_img[eoIM.pix_score]
+  for var in base_img.data_vars:
+    base_img[var] = base_img[var].where(~mask, granule_mosaic[var], True)
+      
+  return base_img
+
+
+
+
+#############################################################################################################
+# Description: This function create a composite image by gradually merge the granule mosaics from 
+#               "get_granule_mosaic" function.
+# 
+# Revision history:  2024-Oct-18  Lixin Sun  Initial creation
+#
+#############################################################################################################
+def create_mosaic_gradually(base_img, unique_granules, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, ExtraBandCode):
+  Bands = criteria['bands']
+  for granule in unique_granules:
+    xr_granule_mosaic = dask.delayed(get_granule_mosaic)(granule, stac_items, SsrData, StartStr, EndStr, Bands, ProjStr, Scale, ExtraBandCode)
+
+    #dask_granule_mosaic = xr.from_delayed(xr_granule_mosaic)
+    base_img = merge_one_granule_mosaic(xr_granule_mosaic, base_img)
+
+  return base_img.compute()
+  
+
+
+
+
+#############################################################################################################
+# Description: This function create a composite image by gradually merge the granule mosaics from 
+#               "get_granule_mosaic" function.
+# 
+# Revision history:  2024-Oct-18  Lixin Sun  Initial creation
+#
+#############################################################################################################
+def create_mosaic_at_once(base_img, unique_granules, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, ExtraBandCode):
+  Bands = criteria['bands']
+  granule_mosaics = [get_granule_mosaic(granule, stac_items, SsrData, StartStr, EndStr, Bands, ProjStr, Scale, ExtraBandCode) for granule in unique_granules]
+
+  merged_result = dask.delayed(merge_granule_mosaics)(granule_mosaics, base_img)
+
+  return merged_result.compute()
+  
+
+
+
 
 #############################################################################################################
 # Description: This function returns a composite image generated from images acquired over a specified time 
@@ -1027,29 +1077,29 @@ def period_mosaic(inParams, ExtraBandCode):
   # Get a list of unique tile names and then loop through each unique tile to generate submosaic 
   #==========================================================================================================  
   unique_granules = get_unique_tile_names(stac_items)  #Get all unique tile names 
-  print('\n<<<<<< The number of unique granule tiles = %d'%(len(unique_granules)))  
+  print('\n<period_mosaic> The number of unique granule tiles = %d'%(len(unique_granules)))  
   print('\n<<<<<< The unique granule tiles = ', unique_granules) 
   
   #==========================================================================================================
-  # Obtain the bbox in projected CRS system (x and y, rather than Lat and Lon)
+  # 
   #==========================================================================================================
-  Bands = criteria['bands']
-  granule_mosaics = [get_granule_mosaic(granule, stac_items, SsrData, StartStr, EndStr, Bands, ProjStr, Scale, ExtraBandCode) for granule in unique_granules]
+  chunk_size = 3
+  for i in range(0, len(unique_granules), chunk_size):
+    chunk    = unique_granules[i:i + chunk_size]
+    base_img = create_mosaic_at_once(base_img, chunk, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, ExtraBandCode)
 
-  merged_result = dask.delayed(merge_granule_mosaics)(granule_mosaics, base_img)
-
-  final_mosaic = merged_result.compute()
-
+    print("<period_mosaic> Completed {}th group......".format(i))
+  
   #==========================================================================================================
   # Mask out the pixels with negative date value
   #========================================================================================================== 
-  final_mosaic = final_mosaic.where(final_mosaic[eoIM.pix_date] > 0)
+  mosaic = base_img.where(base_img[eoIM.pix_date] > 0)
 
   mosaic_stop = time.time()
   mosaic_time = (mosaic_stop - mosaic_start)/60
   print('\n\n<<<<<<<<<< The total elapsed time for generating the mosaic = %6.2f minutes>>>>>>>>>'%(mosaic_time))
   
-  return final_mosaic
+  return mosaic
 
 
 
