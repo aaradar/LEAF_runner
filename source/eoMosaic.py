@@ -297,31 +297,33 @@ def search_STAC_Catalog(Region, Criteria, MaxImgs, ExtraBandCode):
 # Description: This function returns a list of unique tile names contained in a given "StatcItems" list.
 #
 # Revision history:  2024-Jul-17  Lixin Sun  Initial creation
-# 
+#                    2024-Oct-20  Lixin Sun  Changed "unique_names" from a list to a dictionary, so that the 
+#                                            number of stac items with the same 'grid:code' can be recorded.
+#                                            
 #############################################################################################################
 def get_unique_tile_names(StacItems):
   '''
     Args:
       StacItems(List): A list of stac items. '''
   stac_items = list(StacItems)
-  unique_names = []
+  unique_names = {}
 
   if len(stac_items) < 2:
     return unique_names  
   
-  unique_names.append(stac_items[0].properties['grid:code'])  
+  unique_names[stac_items[0].properties['grid:code']] = 1
+
   for item in stac_items:
     new_tile = item.properties['grid:code']
-    found_flag = False
-    for name in unique_names:
-      if new_tile == name:
-        found_flag = True
-        break
-    
-    if found_flag == False:
-      unique_names.append(new_tile)
 
-  return unique_names 
+    if new_tile in unique_names:
+      unique_names[new_tile] += 1
+    else:
+      unique_names[new_tile] = 1   
+  
+  sorted_keys = sorted(unique_names, key = lambda x: unique_names[x], reverse=True)
+
+  return sorted_keys 
 
 
 
@@ -612,17 +614,17 @@ def attach_score(SsrData, ready_IC, StartStr, EndStr):
   #==========================================================================================================
   # Parallelize the process of score calculations for every image in 'ready_IC'
   #==========================================================================================================
-  #time_vals = list(ready_IC.time.values)
-  # with concurrent.futures.ThreadPoolExecutor() as executor:
-  #   futures = [executor.submit(image_score, i, T, ready_IC, midDate, SsrData, median_blu, median_nir) for i, T in enumerate(time_vals)]
+  time_vals = list(ready_IC.time.values)
+  with concurrent.futures.ThreadPoolExecutor() as executor:
+    futures = [executor.submit(image_score, i, T, ready_IC, midDate, SsrData, median_blu, median_nir) for i, T in enumerate(time_vals)]
     
-  #   for future in concurrent.futures.as_completed(futures):
-  #     i, score = future.result()
-  #     ready_IC[eoIM.pix_score][i, :,:] = score
+    for future in concurrent.futures.as_completed(futures):
+      i, score = future.result()
+      ready_IC[eoIM.pix_score][i, :,:] = score
 
-  for i, T in enumerate(ready_IC.time.values):    
-    i, score_img = image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir)    
-    ready_IC[eoIM.pix_score][i, :,:] = score_img
+  # for i, T in enumerate(ready_IC.time.values):    
+  #   i, score_img = image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir)    
+  #   ready_IC[eoIM.pix_score][i, :,:] = score_img
   
   stop = time.time() 
 
@@ -1083,7 +1085,7 @@ def period_mosaic(inParams, ExtraBandCode):
   #==========================================================================================================
   # 
   #==========================================================================================================
-  chunk_size = 3
+  chunk_size = 4
   for i in range(0, len(unique_granules), chunk_size):
     chunk    = unique_granules[i:i + chunk_size]
     base_img = create_mosaic_at_once(base_img, chunk, stac_items, SsrData, StartStr, EndStr, criteria, ProjStr, Scale, ExtraBandCode)
