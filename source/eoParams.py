@@ -413,8 +413,10 @@ def get_LEAF_params(inParams):
 # Description: Obtain a parameter dictionary for Mosaic tool
 #############################################################################################################
 def get_mosaic_params(inParams):
-  out_Params = update_default_params(inParams)  # Modify default parameter dictionary with a given one
-  out_Params['prod_names'] = ['mosaic']         # Of course, product name should be always 'mosaic'
+  out_Params = update_default_params(inParams)  # Modify default parameter dictionary with a given one 
+
+  # Of course, product name should be always 'mosaic'  
+  out_Params['prod_names'] = ['mosaic', 'date'] if 'date' in out_Params['prod_names'] else ['mosaic'] 
 
   return out_Params  
 

@@ -581,7 +581,7 @@ def attach_Date(xrItem):
 def attach_AngleBands(xrDS, StacItems):
   '''Attaches three angle bands to a satallite SURFACE REFLECTANCE image
   Args:    
-    xrDS(xr Dateset): A xarray dataset object (a single image);
+    xrDS(xr.Dateset): A xarray dataset object (a single image);
     StacItems(List): A list of STAC items corresponding to the "xrDS".'''  
   #==========================================================================================================
   # Sort the provided STAC items to match the image sequence in "xrDS"
