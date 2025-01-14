@@ -705,7 +705,7 @@ def get_spec_score(SsrData, inImg, median_blu, median_nir):
   # Calculate scores assuming all the pixels are water
   #==================================================================================================
   water_score = max_SV/max_IR
-  water_score = water_score.where(median_blu > blu, -1*water_score)
+  water_score = water_score.where(median_blu < blu, -1*water_score)
   #print('\n<attach_score> water_score = ', water_score)
 
   #==================================================================================================
