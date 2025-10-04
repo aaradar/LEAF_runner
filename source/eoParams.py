@@ -29,8 +29,8 @@ from datetime import datetime
 #     'resolution': 30,            # Exporting spatial resolution
 #     'out_folder': '',            # the folder name for exporting
 #     'export_style': 'separate',
-#     'start_date': '',
-#     'end_date':  '',
+#     'start_dates': [''],
+#     'end_dates':  [''],
 #     'scene_ID': '',
 #     'projection': 'EPSG:3979',
 #     'CloudScore': False,
@@ -47,7 +47,37 @@ all_param_keys = ['sensor', 'ID', 'unit', 'bands', 'year', 'nbYears', 'months', 
                   'out_location', 'resolution', 'GCS_bucket', 'out_folder', 'export_style', 'projection', 'CloudScore',
                   'monthly', 'start_dates', 'end_dates', 'regions', 'scene_ID', 'current_time', 'current_region', 'time_str','cloud_cover',
                   'StartStr', 'EndStr', 'Region', 'SsrData', 'Criteria', 'IncludeAngles', 'debug', 'entire_tile',
-                  'nodes', 'node_memory', 'number_workers', 'account']
+                  'nodes', 'node_memory', 'number_workers', 'account', 'standardized']
+
+
+
+
+#############################################################################################################
+# Description: This function determines which product is required: mosaic or vegetation parameters
+#
+# Revision history:  2025-Sept-21  Lixin Sun  Initial creation
+#
+#############################################################################################################
+def which_product(ProdParams):
+  '''
+    Args:  
+      ProdParams(dictionary): A given parameter dictionary. 
+  '''  
+  #Ensure 'prod_names' is a key of "ProdParams" dictionary  
+  if 'prod_names' in ProdParams:    
+    # Covert all product name strings to lower cases
+    prod_names = [s.lower() for s in ProdParams['prod_names']]  
+
+    if 'lai' in prod_names or 'fcov' in prod_names or 'fap' in prod_names or 'alb' in prod_names:
+      return 'veg_parama'
+    elif 'mosaic' in prod_names:
+      return 'mosaic' 
+    else:
+      return 'nothing' 
+  else:
+    return 'nothing' 
+
+
 
 
 #############################################################################################################
@@ -137,6 +167,8 @@ def get_query_conditions(inParams, StartStr, EndStr, CloudThresh):
   return query_conds
 
 
+
+
 #############################################################################################################
 # Description: This function tells if there is a customized region defined in parameter dictionary.
 # 
@@ -179,7 +211,7 @@ def has_custom_window(inParams):
 
 
 #############################################################################################################
-# Description: This function sets values for 'current_month' and 'time_str' keys.
+# Description: This function sets values for 'current_time' and 'time_str' keys.
 # 
 # Note: If a customized time windows has been specified, then the given 'current_month' will be ignosed
 #
@@ -199,9 +231,10 @@ def set_current_time(inParams, current_time):
   #==========================================================================================================
   # Ensure the given 'current_time' is valid.
   #==========================================================================================================
-  ndates = len(inParams['start_dates'])
+  nStarts = len(inParams['start_dates'])
+  nStops  = len(inParams['end_dates'])
 
-  if current_time < 0 or current_time >= ndates:
+  if nStarts != nStops or current_time < 0 or current_time >= nStarts:
     print('\n<set_current_time> Invalid \'current_time\' was provided!')
     return None
   
@@ -213,7 +246,7 @@ def set_current_time(inParams, current_time):
   if inParams['monthly']:
     inParams['time_str'] = eoIM.get_MonthName(int(inParams['months'][current_time]))
   else:  
-    inParams['time_str'] = str(inParams['start_dates'][current_time]) + '_' + str(inParams['end_dates'][-1])
+    inParams['time_str'] = str(inParams['start_dates'][current_time]) + '_' + str(inParams['end_dates'][current_time])
 
   return inParams
 
@@ -229,19 +262,29 @@ def set_current_time(inParams, current_time):
 # Revision history:  2024-Apr-08  Lixin Sun  Initial creation
 #
 #############################################################################################################
-def set_spatial_region(inParams, region_name):  
+def set_spatial_region(inParams, region_name):
+  '''
+    Args:
+      inParams(dictionary): A given parameter dictionary for production;
+      region_name(string): A specified region name.
+  '''
+  # Ensure 'inParams' dictionary contains a ket named 'regions'
   if 'regions' not in inParams:
     print('\n<set_spatial_region> There is no \'regions\' key!')
     return None
   
+  # Get all names of all spatial region from 'inParams'
   region_names = inParams['regions'].keys()
 
+  # Ensure the specified region name is included in region names
   if region_name not in region_names:
     print('<set_spatial_region> {} is an invalid tile name!'.format(region_name))
     return None
-    
+  
+  # Change value for 'current_region' key 
   inParams['current_region'] = region_name
-
+  
+  # Return the modified parameter dictionary
   return inParams
 
 
@@ -504,8 +547,8 @@ def form_time_windows(inParams):
         inParams['start_dates'].append(start)
         inParams['end_dates'].append(end) 
 
-  else:
-    inParams['monthly'] = False
+  elif 'standardized' not in inParams:
+      inParams['monthly'] = False
 
   return set_current_time(inParams, 0)
   
@@ -514,25 +557,32 @@ def form_time_windows(inParams):
 
 
 #############################################################################################################
-# Description: This function creates the start and end dates for a list of user-specified months and save 
-#              them into two lists with 'start_dates' and 'end_dates' keys.
+# Description: This function will do the following two things depending on if there are customized regions
+#              defined:
+#              (1) When there is no customized regions defined: it converts the sptail regions defined in 
+#                  inParams['tile_names'] to customized regions and set the first tile as 'current_region';
+#              (2) When there is at least one customized regions already defined in inParams['regions'],
+#                  then just set the first customized region as 'current_region'.  
 #
 # Revision history  2024-Sep-03  Lixin Sun  Initial creation
 #
 #############################################################################################################
 def form_spatial_regions(inParams):
-  if not has_custom_region(inParams):
+  if not has_custom_region(inParams):   #There is no customized region
     inParams['regions'] = {}
     for tile_name in inParams['tile_names']:      
       if eoTG.valid_tile_name(tile_name):
         inParams['regions'][tile_name] = eoTG.get_tile_polygon(tile_name)
     
     return set_spatial_region(inParams, inParams['tile_names'][0])  
-  else:
-    if inParams['tile_names'] is None and inParams['ID']  is None:
-      inParams['current_region'] = f"custom_TL{int(inParams['regions']['coordinates'][0][0][0])}_BR{int(inParams['regions']['coordinates'][0][3][0])}"
-    elif inParams['tile_names'] is None and inParams['ID'] is not None: 
-      inParams['current_region'] = inParams['ID']
+  else:   # There is at least one customized region
+    region_names = inParams['regions'].keys()
+    inParams['current_region'] = list(region_names)[0]
+
+    # if inParams['tile_names'] is None and inParams['ID']  is None:
+    #   inParams['current_region'] = f"custom_TL{int(inParams['regions']['coordinates'][0][0][0])}_BR{int(inParams['regions']['coordinates'][0][3][0])}"
+    # elif inParams['tile_names'] is None and inParams['ID'] is not None: 
+    #   inParams['current_region'] = inParams['ID']
     return inParams
 
 
@@ -548,12 +598,30 @@ def form_spatial_regions(inParams):
 #                    2024-Apr-08  Lixin Sun  Incorporated modifications according to customized time window
 #                                            and spatial region.
 #                    2024-Sep-03  Lixin Sun  Adjusted to ensure that regular months/season will also be 
-#                                            handled as customized time windows.    
+#                                            handled as customized time windows.  
+#                    2025_Sep-23  Lixin Sun  added checking and setting for 'standardized' key, which serves
+#                                            as a lock to prevent a parameter dictionary from being 
+#                                            standardized twice.  
 #############################################################################################################
-def update_default_params(inParams):  
+def standardize_params(inParams):
+  if inParams is None:
+    print('<update_default_params> The given parameter dictionary is None!!')
+    return None
+  
+  #==========================================================================================================
+  # Confirm if the given parameter dictionary has already been standardized
+  #==========================================================================================================
+  if 'standardized' in inParams:
+    if inParams['standardized'] == True:
+      print('The given parameter dictionary has been standardized, cannot be standardized again!')
+      return inParams
+    
+  #==========================================================================================================
+  # Validate user specified parameters 
+  #==========================================================================================================
   all_valid, out_Params = valid_user_params(inParams)
 
-  if all_valid == False or out_Params == None:
+  if all_valid is False or out_Params is None:
     return None
 
   #==========================================================================================================
@@ -561,14 +629,17 @@ def update_default_params(inParams):
   # save in the lists corresponding to 'start_dates' and 'end_dates' keys. In this way, regular months/season
   # will be dealed with as customized time windows.    
   #==========================================================================================================
-  out_Params = form_time_windows(out_Params)  
+  out_Params = form_time_windows(out_Params)
+
   #==========================================================================================================
   # If only regular tile names are specified, then create a dictionary with tile names and their 
   # corresponding 'ee.Geometry.Polygon' objects as keys and values, respectively.   
   #==========================================================================================================
   out_Params = form_spatial_regions(out_Params)  
- 
-  # return modified parameter dictionary 
+   
+  # Lock the returned parameter dictionary to prevent it being standardized twice
+  out_Params['standardized'] = True
+
   return out_Params
 
 
@@ -579,10 +650,12 @@ def update_default_params(inParams):
 # Description: Obtain a parameter dictionary for LEAF tool
 #############################################################################################################
 def get_LEAF_params(inParams):
-  out_Params = update_default_params(inParams)  # Modify default parameters with given ones  
+  out_Params = standardize_params(inParams)  # Modify default parameters with given ones  
   out_Params['unit'] = 2                        # Always surface reflectance for LEAF production
   out_Params['IncludeAngles'] = True            # Imaging geometry angles must be always included   
-
+  out_Params['standardized']  = True            # Mark the dictionary has been standardized, except for
+                                                # changing 'current_time' and 'current_region', no other
+                                                # parameter can be changed   
   return out_Params  
 
 
@@ -605,11 +678,11 @@ def get_mosaic_params(ProdParams, CompParams):
     print('<get_mosaic_params> Either "ProdParams" or "CompParams" is missing!')
     return None
   
-  outParams = update_default_params(ProdParams)  # Modify default parameter dictionary with a given one
+  outParams = standardize_params(ProdParams)  # Modify default parameter dictionary with a given one
   if outParams is None:
     return None
   
-  outParams['prod_names'] = ['mosaic']         # Of course, product name should be always 'mosaic'
+  outParams['prod_names']   = ['mosaic']      # Of course, product name should be always 'mosaic'  
 
   #==========================================================================================================
   # Get ONE valid time window and ONE valid spatial region, respectively
@@ -622,10 +695,11 @@ def get_mosaic_params(ProdParams, CompParams):
     outParams['StartStr'] = StartStr
     outParams['EndStr']   = EndStr
 
-  if ProdParams['tile_names'] is not None:
-    Region = get_spatial_region(ProdParams)
-  else:
-    Region = ProdParams['regions']
+  Region = get_spatial_region(ProdParams)
+  # if ProdParams['tile_names'] is not None:
+  #   Region = get_spatial_region(ProdParams)
+  # else:
+  #   Region = ProdParams['regions']
   
   if Region is None:
     print('\n<get_mosaic_params> Invalid spatial region was defined!!!')
@@ -663,8 +737,8 @@ def get_mosaic_params(ProdParams, CompParams):
 # Description: Obtain a parameter dictionary for land cover classification tool
 #############################################################################################################
 def get_LC_params(inParams):
-  out_Params = update_default_params(inParams) # Modify default parameter dictionary with a given one
-  out_Params['prod_names'] = ['mosaic']        # Of course, product name should be always 'mosaic'
+  out_Params = standardize_params(inParams) # Modify default parameter dictionary with a given one
+  out_Params['prod_names'] = ['mosaic']     # Of course, product name should be always 'mosaic'
 
   return out_Params 
 
@@ -700,12 +774,12 @@ def get_spatial_region(inParams):
   #==========================================================================================================
   reg_name        = inParams['current_region']
   valid_reg_names = inParams['regions'].keys()
-  if inParams['tile_names'] is not None:
-    if reg_name in valid_reg_names:
-      return inParams['regions'][reg_name]
-    else:
-      print('\n<get_spatial_region> Invalid spatial region name provided!')
-      return None
+  if reg_name in valid_reg_names:
+    return inParams['regions'][reg_name]
+  else:
+    print('\n<get_spatial_region> Invalid spatial region name provided!')
+    return None
+      
 
 
 
@@ -742,15 +816,30 @@ def get_time_window(inParams):
     return None, None
 
   start = inParams['start_dates'][current_time]
-  end   = inParams['end_dates'][-1]
+  end   = inParams['end_dates'][current_time]
+
   return start, end
 
 
+
+#############################################################################################################
+# Description: This function returns two required parameter dictionaries: ProdParams, CompParams
+#              These two parameter dictionaries can be provided in two ways: 
+#              1) user provide them directly
+#              2) user provide through command line
+#  
+# Revision history:  2024-Feb-27  Lixin Sun  Initial creation
+#            
+#############################################################################################################
 def form_inputs(ProdParams = None, CompParams = None):
   if ProdParams is not None and CompParams is not None:
+    # user provide the parameter dictionaries directly
     return ProdParams, CompParams
   else:
+    # user provide the parameter dictionaries through a command line
     return cmd_arguments()
+
+
 
 
 def cmd_arguments(argv=None):    

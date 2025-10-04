@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def run(params):
     #from lib import LEAFNets as LFNs
 
-    task_list = eoMZ.period_mosaic(params)    
+    task_list = eoMZ.one_mosaic(params)    
     while any([task.active() for task in task_list]):
         # count active tasks
         for task in task_list:

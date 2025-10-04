@@ -49,7 +49,7 @@ def create_LEAF_maps(ProdParams, CompParams):
   prod_names = ProdParams['prod_names']
   #print(f'\n<create_LEAF_maps> all parameters for generating mosaic: {ProdParams}')
 
-  ext_tiffs_rec, period_str, mosaic = eoMz.period_mosaic(ProdParams, CompParams, False)
+  ext_tiffs_rec, period_str, mosaic = eoMz.one_mosaic(ProdParams, CompParams, False)
   print('\n<create_LEAF_maps> The bands in mosaic image:', mosaic.data_vars)
   # print('\n<create_LEAF_maps> ext_tiffs_rec = ', ext_tiffs_rec)
   # print('\n<create_LEAF_maps> period_str = ', period_str)
@@ -155,7 +155,7 @@ def SL2P_estimation(Params):
       SL2P_separate_params(Params, image, region, SsrData, ClassImg)
     '''
   else: 
-    mosaic = Mosaic.LEAF_Mosaic(SsrData, region, start, stop, True)   
+    mosaic = eoMz.LEAF_Mosaic(SsrData, region, start, stop, True)   
     print("<apply_SL2P> The band names in mosiac image = ", mosaic.bandNames().getInfo())
 
     SL2P_separate_params(Params, mosaic, region, SsrData, ClassImg)
@@ -317,24 +317,25 @@ def LEAF_production(ProdParams, CompParams):
   #==========================================================================================================
   # Standardize the execution parameters so that they are applicable for producing vegetation parameter maps
   #==========================================================================================================
-  Params = eoPM.get_LEAF_params(ProdParams)
-  print('<LEAF_production> All input parameters = ', Params) 
+  usedParams = eoPM.get_LEAF_params(ProdParams)
+  print('<LEAF_production> All input parameters = ', usedParams) 
 
   #==========================================================================================================
   # Produce vegetation parameter porducts for eath region and each time window
   #==========================================================================================================
-  region_names = Params['regions'].keys()
-  nTimes       = len(Params['start_dates'])
+  region_names = usedParams['regions'].keys()    # A list of region names
+  nTimes       = len(usedParams['start_dates'])  # The number of time windows
 
   for reg_name in region_names:
-    Params = eoPM.set_spatial_region(Params, reg_name)
-
-    # Produce vegetation parameter porducts for each time window
+    # Loop through each spatial region
+    usedParams = eoPM.set_spatial_region(usedParams, reg_name)
+    
     for TIndex in range(nTimes):
-      Params = eoPM.set_current_time(Params, TIndex)
+      # Produce vegetation parameter porducts for each time window
+      usedParams = eoPM.set_current_time(usedParams, TIndex)
 
       # Produce and export products in a specified way (a compact image or separate images)      
-      out_style = str(Params['export_style']).lower()
+      out_style = str(usedParams['export_style']).lower()
       if out_style.find('comp') > -1:
         print('\n<LEAF_production> Generate and export biophysical maps in one file .......')
         #out_params = compact_params(mosaic, SsrData, ClassImg)
@@ -345,9 +346,9 @@ def LEAF_production(ProdParams, CompParams):
       else: 
         # Produce and export vegetation parameetr maps for a time period and a region
         print('\n<tile_LEAF_production> Generate and export separate vegetation biophysical maps......')        
-        VBP_maps = create_LEAF_maps(Params, CompParams)
+        VBP_maps = create_LEAF_maps(usedParams, CompParams)
       
-        # Export results for ONE tile and ONE month/season        
-        export_VegParamMaps(Params, VBP_maps)   
+        # Export results for ONE tile and ONE time window
+        export_VegParamMaps(usedParams, VBP_maps)   
 
   

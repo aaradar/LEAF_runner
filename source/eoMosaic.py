@@ -148,8 +148,7 @@ def get_View_angles(StacItem):
 
 
 def display_meta_assets(stac_items, First):
-  if First == True:
-    
+  if First == True:    
     first_item = stac_items[0]
 
     print('<<<<<<< The assets associated with the first item >>>>>>>\n' )
@@ -161,14 +160,16 @@ def display_meta_assets(stac_items, First):
     print("Geometry:", first_item.geometry)
     print("Bounding Box:", first_item.bbox)
     print("Datetime:", first_item.datetime)
+    properties = first_item.properties
+    print(f'cloud cover: {properties['eo:cloud_cover']}')
     print("Properties:")
 
-    for key, value in first_item.properties.items():
+    for key, value in properties.items():
       print(f"  <{key}>: {value}")
   else:
     for item in stac_items:
       properties = item.properties
-      print("ID: {}; vza: {}; vaa: {}".format(item.id, properties['vza'], properties['vaa']))
+      print("ID: {}; vza: {}; vaa: {}; cloud_cover:{}".format(item.id, properties['vza'], properties['vaa'], properties['eo:cloud_cover']))
 
 
 
@@ -518,20 +519,21 @@ def get_score_refers(ready_IC):
   blu = ready_IC['blue'].median(dim='time',   skipna=True)
   red = ready_IC['red'].median(dim='time',    skipna=True)
   nir = ready_IC['nir08'].median(dim='time',  skipna=True)
+  #sw1 = ready_IC['swir22'].median(dim='time', skipna=True)
   sw2 = ready_IC['swir22'].median(dim='time', skipna=True)
 
   #==========================================================================================================
   # Calculate NDVI and estimate blue band reference from SWIR2 reflectance
   #==========================================================================================================
-  NDVI = (nir - red)/(nir + red + 0.0001)  
+  NDVI      = (nir - red)/(nir + red + 0.0001)  
   model_blu = sw2*0.25
   
   #==========================================================================================================
   # Correct the blue band values of median mosaic for the pixels with NDVI values larger than 0.3
   #========================================================================================================== 
-  condition = (model_blu > blu) | (NDVI < 0.3) | (sw2 < blu)
+  condition = (nir < 2*blu) | (NDVI < 0.3)    # | (sw2 < blu)
   blu       = blu.where(condition, other = model_blu)
-  blu       = blu.where(condition, other = model_blu)
+  #blu       = blu.where(condition, other = model_blu)
   
   del red, sw2, NDVI, model_blu, condition
   
@@ -545,13 +547,14 @@ def get_score_refers(ready_IC):
 #
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 #                    2024-Jul-25  Lixin Sun  Parallelized the code using 'concurrent.futures' module.
-#                    2024-Nov-26  Marjan Asgari  Removed the "Parallelized the code using 'concurrent.futures' module."" With dask distributed we cannot use other 
+#                    2024-Nov-26  Marjan Asgari  Removed the "Parallelized the code using 'concurrent.futures' 
+#                                                module."" With dask distributed we cannot use other 
 #                                                parallelization techniques.
 #############################################################################################################
 #==========================================================================================================
 # Define an internal function that can calculate time and spectral scores for each image in 'ready_IC'
 #==========================================================================================================
-def image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir):
+def image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir, WinSize):
   """ 
   Returns a score band for a specified image in a xarray Dataset object.
 
@@ -563,29 +566,27 @@ def image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir):
         SsrData (dict): Sensor data containing the SSR_CODE.
         median_blu (float): Median blue reflectance.
         median_nir (float): Median NIR reflectance.
+        WinSize(float): A float number represents the size/days of a compositing window.
 
     Returns:
         int, xarray.DataArray: Image index and calculated score. """
-   
+  
   #==========================================================================================================
   # Calculatr time score according to sensor type
   #==========================================================================================================  
-  ImgDate   = pd.Timestamp(T).to_pydatetime()
-  date_diff = (ImgDate - midDate).days  
-
   ssr_code   = int(SsrData['SSR_CODE'])
   is_S2_data = ssr_code in [eoIM.S2A_sensor, eoIM.S2B_sensor, eoIM.HLSS30_sensor]
   
-  std = 16
-  if is_S2_data == True:   # For S2 data only
-    std = 12 
-  elif ssr_code == eoIM.HLS_sensor:  # For Harmonized S2 and LS data 
-    std = 6 
+  STD = float(WinSize/6.0 + 1 if is_S2_data == True or ssr_code == eoIM.HLS_sensor else WinSize/6.0 + 3)
 
-  time_score = 1.0/math.exp(0.5 * pow(date_diff/std, 2))
+  ImgDate   = pd.Timestamp(T).to_pydatetime()
+  date_diff = float((ImgDate - midDate).days)
+  #print(f'image date: {ImgDate}')
+  
+  time_score = 1.0/math.exp(0.5 * pow(date_diff/STD, 2))
 
   #==========================================================================================================
-  # Extract some band images required for calculatingspectral and cloud coverage scores
+  # Extract some band images required for calculating spectral and cloud coverage scores
   #==========================================================================================================
   img = ready_IC.isel(time=i)
   
@@ -600,15 +601,10 @@ def image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir):
   max_spec = xr.apply_ufunc(np.maximum, max_SV, max_IR, dask='allowed')
 
   valid_mask  = xr.where(max_spec > 0.0, 1, 0)
-  valid_pixes = valid_mask.sum(dim=["x", "y"])
-  total_pixes = img.sizes["x"] * img.sizes["y"]
+  valid_pixes = float(valid_mask.sum(dim=["x", "y"]).item())
+  total_pixes = float(img.sizes["x"] * img.sizes["y"])
 
-  CC_score = valid_pixes/total_pixes
-
-  #==================================================================================================
-  # Calculate scores assuming all the pixels are water
-  #==================================================================================================
-  water_score = xr.where(max_SW <= 3.0, median_blu / STD_blu, 0.0)
+  CC_score = valid_pixes/total_pixes 
   
   #==================================================================================================
   # Calculate scores assuming all the pixels are land
@@ -616,20 +612,36 @@ def image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir):
   abs_blu_pen = xr.apply_ufunc(np.abs, img['blue'] - median_blu, dask='allowed')
   blu_pen     = xr.apply_ufunc(np.exp, abs_blu_pen, dask='allowed')
 
-  nir_pen     = median_nir - img['nir08']
-  nir_pen     = nir_pen.where(nir_pen > 0, 0)
+  nir_pen     = xr.apply_ufunc(np.abs, img['nir08']- median_nir, dask='allowed') 
+  #nir_pen     = median_nir - img['nir08']
+  #nir_pen     = nir_pen.where(nir_pen > 0, 0)
+  
+  #==================================================================================================
+  # Calculate scores for non-vegetated surfaces
+  #==================================================================================================
+  nonveg_score = (median_blu+median_nir)/(blu_pen + nir_pen)
 
-  land_score = xr.where(max_IR > 0.1, img['nir08']/(STD_blu + blu_pen + nir_pen), 0.0)
-  spec_score = land_score.where((max_SV < max_IR) | (max_SW > 3.0), water_score)
+  spec_score = xr.where(median_nir > 2*median_blu, img['nir08']/(STD_blu + blu_pen + nir_pen), nonveg_score)
+  #spec_score = land_score.where((max_SV < max_IR) | (max_SW > 3.0), water_score)
   spec_score = spec_score / (spec_score + 1) 
   
-  del land_score, nir_pen, blu_pen, abs_blu_pen, water_score, valid_pixes, valid_mask, max_spec, max_IR, max_SW, max_SV, STD_blu, img
-  return i, spec_score + time_score + CC_score
+  del nir_pen, blu_pen, abs_blu_pen, valid_pixes, valid_mask, max_spec, max_IR, max_SW, max_SV, STD_blu, img
+  
+  #==================================================================================================
+  # Determine the scoring weights based on the length of compositing window
+  #==================================================================================================
+  time_w = 0.4
+  CC_w   = 0.9
+  if WinSize > 31:
+    time_w = 0.5
+
+  return i, spec_score + time_w*time_score + CC_w*CC_score
 
 
 
 #############################################################################################################
-# Description: This function returns a list of band names to be loaded from a STAC catalog.  
+# Description: This function attaches a score band to each image in a XArray Dataset object, which is 
+#              equivalent to an image collection in GEE.
 # 
 # Revision history:  2024-Oct-31  Lixin Sun  Initial creation
 #
@@ -639,22 +651,25 @@ def attach_score(ready_IC, SsrData, StartStr, EndStr):
      Args:
        ready_IC(xarray.dataset): A xarray dataset object containing a set of STAC images/items;
        SsrData(dictionary): A dictionary containing some metadata about a sensor;       
-       StartStr(string): A string representing the start date of a timeframe;
-       EndStr(string): A string representing the end date of a timeframe.'''  
+       StartStr(string): A string representing the start date of a compositing period;
+       EndStr(string): A string representing the end date of a compositing period.'''  
 
   #==========================================================================================================
   # Create reference images for blue and NIR bands
   #==========================================================================================================
   median_blu, median_nir = get_score_refers(ready_IC)
   midDate = datetime.strptime(eoUs.period_centre(StartStr, EndStr), "%Y-%m-%d")
-  
+  start   = datetime.strptime(StartStr, "%Y-%m-%d")
+  stop    = datetime.strptime(EndStr, "%Y-%m-%d")
+  WinSize = (stop - start).days
+
   #==========================================================================================================
   # Parallelize the process of score calculations for every image in 'ready_IC'
   #==========================================================================================================
   time_vals = list(ready_IC.time.values)
   
   for i, T in enumerate(time_vals):    
-    i, score = image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir)
+    i, score = image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir, WinSize)
     ready_IC[eoIM.pix_score][i, :,:] = score
 
   del median_blu, median_nir
@@ -956,10 +971,14 @@ def get_granule_mosaic(Input_tuple):
   #==========================================================================================================
   # Load satellite images from a STAC catalog
   #==========================================================================================================
-  one_granule_items = get_one_granule_items(StacItems, granule)                # Extract a list of items based on an unique tile name
+  one_granule_items = get_one_granule_items(StacItems, granule)                # Extract a list of STAC items based on an unique granule name
   filtered_items    = get_unique_STAC_items(one_granule_items, MosaicParams)   # Remain only one item from those that share the same timestamp
-  
+ 
   if 'scl' in Bands:   # For Sentinel-2 images from AWS data catalog 
+    #When in debugging mode, display metadata assets
+    # if MosaicParams["debug"]:
+    #   display_meta_assets(filtered_items['S2'], False)   
+
     xrDS_S2 = load_STAC_items(filtered_items['S2'], Bands, chunk_size, ProjStr, Scale)  
     xrDS_LS = None  
   else:  #For both Snetinel-2 and Landsat data from LP DAAC of NASA
@@ -1269,7 +1288,7 @@ def create_mosaic_at_once(BaseImg, unique_granules, stac_items, MosaicParams):
 # Revision history:  2024-May-24  Lixin Sun  Initial creation
 #                    2024-Jul-20  Lixin Sun  Modified to generate the final composite image tile by tile.
 #############################################################################################################
-def period_mosaic(ProdParams, CompParams, Output=True):
+def one_mosaic(ProdParams, CompParams, Output=True):
   '''
     Args:
       ProdParams(Dictionary): A dictionary containing all parameters related to composite image production;
@@ -1279,32 +1298,23 @@ def period_mosaic(ProdParams, CompParams, Output=True):
   mosaic_start = time.time()   #Record the start time of the whole process
 
   #==========================================================================================================
-  # Obtain all the parameters (including items from 'CompParams') required by a compositing process
-  #==========================================================================================================  
-  MosaicParams = eoPM.get_mosaic_params(ProdParams, CompParams)
-  
-  if MosaicParams is None:
-    print('<period_mosaic> Inconsistent input parameters!')
-    return None
-  
-  #==========================================================================================================
   # Search all the STAC items based on a spatial region and a time window
   # Note: (1) The 2nd parameter (MaxImgs) for "search_STAC_Catalog" function cannot be too large. Otherwise,
   #           a server internal error will be triggered.
   #       (2) The imaging angles will be attached to each STAC item by "search_STAC_Catalog" function if S2
   #           data from AWS is used.
   #==========================================================================================================  
-  stac_items = search_STAC_Catalog(MosaicParams, 100)  
+  stac_items = search_STAC_Catalog(ProdParams, 100)  
   print(f"\n<period_mosaic> A total of {len(stac_items):d} items were found.\n")
 
   #When in debugging mode, display metadata assets
-  if MosaicParams["debug"]:
+  if ProdParams["debug"]:
     display_meta_assets(stac_items, True)   
   
   #==========================================================================================================
-  # Create a base image that that fully spans ROI
+  # Create a base image that fully spans ROI
   #==========================================================================================================
-  base_img = get_base_Image(stac_items, MosaicParams)
+  base_img = get_base_Image(stac_items, ProdParams)
   print('\n<period_mosaic> based mosaic image = ', base_img)
   
   #==========================================================================================================
@@ -1313,16 +1323,16 @@ def period_mosaic(ProdParams, CompParams, Output=True):
   unique_granules = get_unique_tile_names(stac_items)  #Get all unique tile names 
   print('\n<period_mosaic> The number of unique granule tiles = %d'%(len(unique_granules)))  
 
-  if MosaicParams["debug"]:
+  if ProdParams["debug"]:
     print('\n<<<<<< The unique granule tiles = ', unique_granules)   
 
   #==========================================================================================================
   # Create submosaic separately for each granule in parallel and on distributed workers
   #==========================================================================================================
   if CompParams["debug"]:
-    submited_granules_mosaics, client, cluster, unique_name = create_mosaic_at_once(base_img, unique_granules, stac_items, MosaicParams)
+    submited_granules_mosaics, client, cluster, unique_name = create_mosaic_at_once(base_img, unique_granules, stac_items, ProdParams)
   else:
-    submited_granules_mosaics, client, cluster, unique_name = create_mosaic_at_once_distributed(base_img, unique_granules, stac_items, MosaicParams)
+    submited_granules_mosaics, client, cluster, unique_name = create_mosaic_at_once_distributed(base_img, unique_granules, stac_items, ProdParams)
   
   persisted_granules_mosaics = dask.persist(*submited_granules_mosaics, optimize_graph=True)
   for future, granules_mosaic in as_completed(persisted_granules_mosaics, with_results=True):
@@ -1354,13 +1364,14 @@ def period_mosaic(ProdParams, CompParams, Output=True):
   ext_tiffs_rec = ["test"]
   period_str = "test"
   if Output:
-    ext_tiffs_rec, period_str = export_mosaic(MosaicParams, mosaic)
+    ext_tiffs_rec, period_str = export_mosaic(ProdParams, mosaic)
   
   #==========================================================================================================
   # Create logging files
   #========================================================================================================== 
-  dask_out_file = Path(MosaicParams["out_folder"]) / f"log_{unique_name}.out"
-  dask_directory = os.path.join(Path(MosaicParams["out_folder"]), f"dask_spill_{unique_name}")
+  dask_out_file  = Path(ProdParams["out_folder"]) / f"log_{unique_name}.out"
+  dask_directory = os.path.join(Path(ProdParams["out_folder"]), f"dask_spill_{unique_name}")
+
   if os.path.exists(dask_out_file):
       os.remove(dask_out_file)
       print(f"File '{dask_out_file}' has been deleted.")
@@ -1501,6 +1512,15 @@ def MosaicProduction(ProdParams, CompParams):
        CompParams(Python Dictionary): A dictionary containing input parameters related to used computing environment.
   '''
   #==========================================================================================================
+  # Standardize the parameter dictionaries so that they are applicable for mosaic generation
+  #==========================================================================================================
+  usedParams = eoPM.get_mosaic_params(ProdParams, CompParams)  
+    
+  if usedParams is None:
+    print('<MosaicProduction> Inconsistent input parameters!')
+    return None
+  
+  #==========================================================================================================
   # Generate composite images based on given input parameters
   #==========================================================================================================
   ext_tiffs_rec = []
@@ -1508,42 +1528,43 @@ def MosaicProduction(ProdParams, CompParams):
   all_base_tiles = []  
   
   if CompParams["entire_tile"]:
-    for base_tile_name in ProdParams['tile_names']:
-      subtiles = eoTG.get_subtile_names(base_tile_name)
+    for tile_name in usedParams['tile_names']:
+      subtiles = eoTG.get_subtile_names(tile_name)
       for subtile in subtiles:            
-        tile_params = copy.deepcopy(ProdParams)
+        tile_params = copy.deepcopy(usedParams)
         print(tile_params)
         tile_params['tile_names'] = [subtile]
         
         tile_params = eoPM.get_mosaic_params(tile_params, CompParams)
         if len(ext_tiffs_rec) == 0:
-          ext_tiffs_rec, period_str, mosaic = period_mosaic(tile_params, CompParams)
+          ext_tiffs_rec, period_str, mosaic = one_mosaic(tile_params, CompParams)
         else: 
-          _, _, mosaic = period_mosaic(tile_params, CompParams)
+          _, _, mosaic = one_mosaic(tile_params, CompParams)
 
-        all_base_tiles.append(base_tile_name)
+        all_base_tiles.append(tile_name)
   else:
-    if ProdParams['tile_names'] is not None:
-      for tile_name in ProdParams['tile_names']:
-        tile_params = copy.deepcopy(ProdParams)
-        tile_params['tile_names'] = [tile_name]
-        #tile_params = eoPM.get_mosaic_params(tile_params, comp_params)
-        period_mosaic(tile_params, CompParams)
-    else:
-      #custom_params = eoPM.get_mosaic_params(prod_params, comp_params)
-      period_mosaic(ProdParams, CompParams)
-  
-  # if comp_params["entire_tile"]:
-  #   for base_tile in all_base_tiles:
-  #       subtiles = eoTG.get_subtile_names(base_tile_name)
-  #       for product in ext_tiffs_rec:
-  #           gdal_files = []
-  #           for subtile in subtiles:
-  #               file_path = prod_params["out_folder"] + "/" + prod_params["sensor"] + "_" + subtile + "_" + period_str + "_" + product + "_" + str(prod_params["resolution"]) + "m.tif"
-  #               if os.path.exists(Path(file_path)):
-  #                   gdal_files.append(file_path)
-  #               else:
-  #                   break
-  #           if len(gdal_files) == len(subtiles):
-  #               merge_output = prod_params["out_folder"] + "/" + prod_params["sensor"] + "_" + base_tile + "_" + period_str + "_" + product + "_" + str(prod_params["resolution"]) + "m.tif"
-  #               gdal_mosaic_rasters(gdal_files,merge_output)
+    region_names = usedParams['regions'].keys()    # A list of region names
+    nTimes       = len(usedParams['start_dates'])  # The number of time windows
+
+    for reg_name in region_names:
+      # Loop through each spatial region
+      usedParams = eoPM.set_spatial_region(usedParams, reg_name)
+      
+      for TIndex in range(nTimes):
+        # Produce vegetation parameter porducts for each time window
+        usedParams = eoPM.set_current_time(usedParams, TIndex)
+
+        # Produce and export products in a specified way (a compact image or separate images)      
+        out_style = str(usedParams['export_style']).lower()
+        if out_style.find('comp') > -1:
+          print('\n<MosaicProduction> Generate and export mosaic images in one file .......')
+          #out_params = compact_params(mosaic, SsrData, ClassImg)
+
+          # Export the 64-bits image to either GD or GCS
+          #export_compact_params(fun_Param_dict, region, out_params, task_list)
+
+        else: 
+          # Produce and export vegetation parameetr maps for a time period and a region
+          print('\n<MosaicProduction> Generate and export separate mosaic images......')        
+          one_mosaic(usedParams, CompParams)
+ 

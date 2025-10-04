@@ -333,7 +333,7 @@ def apply_gain_offset(xrDS, SsrData, MaxRef, all_bands):
      Args:        
        xrDS(xrDataset): A given xarray dataset object to which gain and offset will be applied  
        SsrData(Dictionary): A Dictionary containing metadata associated with a sensor and data unit;
-       MaxREF: The maximum reflectance value (1 or 100);
+       MaxRef: The maximum reflectance value (1 or 100);
        all_bands(Boolean): A flag indicating if apply gain and offset to all bands or not.''' 
   
   #================================================================================================

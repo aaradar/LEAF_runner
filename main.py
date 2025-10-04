@@ -17,7 +17,7 @@ if str(Path(__file__).parents[0]) not in sys.path:
 
 import source.eoMosaic as eoMz
 import source.eoParams as eoPM
-import source.eoTileGrids as eoTG
+#import source.eoTileGrids as eoTG
 import source.LEAFProduction as leaf
 
 
@@ -28,20 +28,6 @@ def gdal_mosaic_rasters(sorted_files_to_mosaic:list, merge_output_file:str):
     os.system(" ".join(gdal_merge_command))
 
 
-#############################################################################################################
-# Description: This function determines which product is requred, mosaic or vegetation parameters
-#############################################################################################################
-def which_product(ProdParams):
-  if 'prod_names' in ProdParams:    
-    prod_names = [s.lower() for s in ProdParams['prod_names']]  
-    if 'lai' in prod_names or 'fcover' in prod_names or 'fapar' in prod_names or 'albedo' in prod_names:
-      return 'veg_parama'
-    elif 'mosaic' in prod_names:
-      return 'mosaic' 
-    else:
-      return 'nothing' 
-  else:
-    return 'nothing' 
 
 
 
@@ -55,13 +41,13 @@ def main():
   prod_params, comp_params = eoPM.form_inputs(ProdParams, CompParams)  # Using two dictionaries to input required parameters
   #prod_params, comp_params = eoPM.form_inputs()                       # Using command options to input required parameters   
   if prod_params is None or comp_params is None:
-    print('<main> Incomplete input parameters!')
+    print('<main> Incomplete input parameters (two dictionaries, ProdParams and CompParams, are required)!')
     return
   
   #==========================================================================================================
   # Determine which product is required
   #==========================================================================================================
-  prod_type = which_product(ProdParams)
+  prod_type = eoPM.which_product(ProdParams)
   if 'veg' in prod_type:
     leaf.LEAF_production(prod_params, comp_params)
 
@@ -70,6 +56,18 @@ def main():
     
 
 
+ottawa_region = {
+    'type': 'Polygon',
+    'coordinates': [
+       [
+         [-76.120,45.184], 
+         [-75.383,45.171],
+         [-75.390,45.564], 
+         [-76.105,45.568], 
+         [-76.120,45.184]
+       ]
+    ]
+}
 
 CompParams = {
   "debug"       : True,
@@ -83,17 +81,18 @@ CompParams = {
 ProdParams = {
     'sensor': 'S2_SR',       # A sensor type string (e.g., 'S2_SR' or 'HLSS30_SR' or 'MOD_SR')
     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
-    'year': 2023,                # An integer representing image acquisition year
+    'year': 2024,                # An integer representing image acquisition year
     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
-    'months': [8],               # A list of integers represening one or multiple monthes     
-    'tile_names': ['tile55_922'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-    'prod_names': ['LAI', 'fCOVER', 'fAPAR', 'Albedo'],    #['mosaic', 'LAI', 'fCOVER', ]    
-    'resolution': 200,            # Exporting spatial resolution    
-    'out_folder': 'C:/Work_Data/LEAF_S2_tile55_922_2023_Aug_200m',  # the folder name for exporting
+    'months': [8],            # A list of integers represening one or multiple monthes     
+    'tile_names': ['tile55_933'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+    'prod_names': ['mosaic'],    #['LAI', 'fCOVER', 'fAPAR', 'Albedo'], 
+    'resolution': 10,            # Exporting spatial resolution    
+    'out_folder': 'C:/Work_Data/S2_tile55_2022_10m_new1',  # the folder name for exporting
     'projection': 'EPSG:3979',
     'IncludeAngles': False,
-    #'start_date': '2022-06-15',
-    #'end_date': '2022-09-15'
+    #'start_dates': ['2022-06-15'],
+    #'end_dates': ['2022-09-15'],
+    'regions': {'ottawa': ottawa_region}
 }
 
 
