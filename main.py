@@ -73,7 +73,7 @@ CompParams = {
   "debug"       : True,
   "entire_tile" : False,     #
   "nodes"       : 1,
-  "node_memory" : "120G",
+  "node_memory" : "14G",
   "number_workers" : 10
 }
 
@@ -86,7 +86,7 @@ ProdParams = {
     'months': [8],            # A list of integers represening one or multiple monthes     
     'tile_names': ['tile55_933'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
     'prod_names': ['mosaic'],    #['LAI', 'fCOVER', 'fAPAR', 'Albedo'], 
-    'resolution': 10,            # Exporting spatial resolution    
+    'resolution': 20,            # Exporting spatial resolution    
     'out_folder': 'C:/Work_Data/S2_tile55_2022_10m_new1',  # the folder name for exporting
     'projection': 'EPSG:3979',
     'IncludeAngles': False,

@@ -598,13 +598,19 @@ def image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir, WinSiz
   #==================================================================================================
   # Calculate cloud coverage score
   #==================================================================================================
-  max_spec = xr.apply_ufunc(np.maximum, max_SV, max_IR, dask='allowed')
+  CC_key = ImgDate.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+  CC_score = 1.0 - float(ready_IC.attrs["item_CC"][CC_key])/100.0
 
-  valid_mask  = xr.where(max_spec > 0.0, 1, 0)
-  valid_pixes = float(valid_mask.sum(dim=["x", "y"]).item())
-  total_pixes = float(img.sizes["x"] * img.sizes["y"])
+  #print(f'cloud cover score: {CC_score}')
+  #print(ready_IC.attrs["item_CC"])
 
-  CC_score = valid_pixes/total_pixes 
+  # max_spec = xr.apply_ufunc(np.maximum, max_SV, max_IR, dask='allowed')
+
+  # valid_mask  = xr.where(max_spec > 0.0, 1, 0)
+  # valid_pixes = float(valid_mask.sum(dim=["x", "y"]).item())
+  # total_pixes = float(img.sizes["x"] * img.sizes["y"])
+
+  # CC_score = valid_pixes/total_pixes 
   
   #==================================================================================================
   # Calculate scores assuming all the pixels are land
@@ -625,7 +631,7 @@ def image_score(i, T, ready_IC, midDate, SsrData, median_blu, median_nir, WinSiz
   #spec_score = land_score.where((max_SV < max_IR) | (max_SW > 3.0), water_score)
   spec_score = spec_score / (spec_score + 1) 
   
-  del nir_pen, blu_pen, abs_blu_pen, valid_pixes, valid_mask, max_spec, max_IR, max_SW, max_SV, STD_blu, img
+  del nir_pen, blu_pen, abs_blu_pen, max_IR, max_SW, max_SV, STD_blu, img
   
   #==================================================================================================
   # Determine the scoring weights based on the length of compositing window
@@ -813,6 +819,19 @@ def load_STAC_items(STAC_items, Bands, chunk_size, ProjStr, Scale):
   if xrDS is None:
     return xrDS
   
+  #==========================================================================================================
+  # Attach a dictionary that contains time tags and their corresponding cloud covers
+  #==========================================================================================================
+  item_CC = {}
+  for item in STAC_items:
+    properties = item.properties
+    #print("<load_STAC_items> item time tag: datetime: {}; CC: {}".format(properties['datetime'], properties['eo:cloud_cover']))
+    item_CC[properties['datetime']] = properties['eo:cloud_cover']
+  
+  xrDS.attrs["item_CC"] = item_CC
+
+  #print(f'item CCs {xrDS.attrs["item_CC"]}')
+
   return rename_spec_bands(xrDS)
 
 
