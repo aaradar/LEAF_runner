@@ -67,34 +67,35 @@ CompParams = {
   "debug"       : True,
   "entire_tile" : False,     #
   "nodes"       : 1,
-  "node_memory" : "12G",
-  "number_workers" : 4
+  "node_memory" : "120G",
+  "number_workers" : 40
 }
 
   
-  
+
+
 ProdParams = {
     'sensor': 'S2_SR',       # A sensor type string (e.g., 'S2_SR', 'HLS_SR', 'HLSL30_SR', 'HLSS30_SR' or 'MOD_SR')
     'unit': 2,                   # A data unit code (1 or 2 for TOA or surface reflectance)    
-    'year': 2024,                # An integer representing image acquisition year
+    'year': 2020,                # An integer representing image acquisition year
     'nbYears': -1,               # positive int for annual product, or negative int for monthly product
     'months': [8],            # A list of integers represening one or multiple monthes     
-    'tile_names': ['tile42_921'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
-    'prod_names': ['LAI', 'fCOVER', 'fAPAR', 'Albedo'],    #['LAI', 'fCOVER', 'fAPAR', 'Albedo'], 
-    'resolution': 100,            # Exporting spatial resolution    
-    'out_folder': 'C:/Work_Data/LEAF_tile42_921_2024_100m',  # the folder name for exporting
+    'tile_names': ['tile41_921'], # A list of (sub-)tile names (defined using CCRS' tile griding system) 
+    'prod_names': ['mosaic'],    #['LAI', 'fCOVER', 'fAPAR', 'Albedo'], 
+    'resolution':20,            # Exporting spatial resolution    
+    'out_folder': 'C:/Work_Data/S2_mosaic_Ottawa_2020_Aug_20m',  # the folder name for exporting
     'projection': 'EPSG:3979',
     'IncludeAngles': False,
-    #'start_dates': ['2024-06-15'],
-    #'end_dates': ['2024-09-15'],
-    #'regions': {'ottawa': ottawa_region}  #, 'vancouver': vancouver_region}    
+    #'start_dates': ['2025-06-15'],
+    #'end_dates': ['2025-09-15'],
+    'regions': {'ottawa': ottawa_region}  #, 'vancouver': vancouver_region}    
 }
 
 
 
 
 #############################################################################################################
-# Description: This is the main function for generating composite images or vegetation biophysical parameetr
+# Description: This is the main function for generating composite images or vegetation biophysical parameter
 #              maps. The selection of these two products is controlled by 'prod_names' parameter in 
 #              "ProdParams" input dictionary. 
 #############################################################################################################
@@ -112,11 +113,11 @@ def main(inProdParams, inCompParams):
   if prod_params is None or comp_params is None:
     print('<main> Incomplete input parameters (two dictionaries, ProdParams and CompParams, are required)!')
     return
-  
+     
   #==========================================================================================================
   # Determine which product, mosaic image or vegetation biophysical parameter maps, will be generated
   #==========================================================================================================
-  prod_type = eoPM.which_product(ProdParams)
+  prod_type = eoPM.which_product(prod_params)
   if 'veg' in prod_type:
     leaf.LEAF_production(prod_params, comp_params)
 
@@ -127,8 +128,8 @@ def main(inProdParams, inCompParams):
 
 
 #############################################################################################################
-# Description: The following code defines a way to execute the code with or without parameters (default 
-#              parameters will be used, useful when execute code within VSCode).
+# Description: The following code will be called only when executed within VSCode; it will be ignored when
+#              executed from the command Prompt or a Jupyter notebook. 
 #
 #############################################################################################################
 if __name__ == "__main__":

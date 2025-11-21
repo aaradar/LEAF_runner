@@ -1,13 +1,16 @@
 
 
 import os
-import numpy as np
+import glob
 import datetime
 #import rasterio
 import rioxarray
+
+import numpy as np
 import xarray as xr
 
 import eoUtils as eoUs
+
 
 
 UNKNOWN_sensor = 0
@@ -534,7 +537,7 @@ def get_MonthName(month_numb):
 
 
 #############################################################################################################
-# Description: This function reads a GeoTIF image from a local drive and saves it as a xarray.dataset object.   
+# Description: This function reads a GeoTIF image from a local drive and saves it as a xarray.dataset object.
 #  
 # Revision history:  2024-Aug-01  Lixin Sun  Initial creation
 #
@@ -545,6 +548,67 @@ def read_geotiff(ImgPath, OutName='band'):
     return None
   
   return rioxarray.open_rasterio(ImgPath)
+
+
+
+#############################################################################################################
+# Description: This function reads multiple GeoTIF images from a given local directory into one 
+#              xarray.dataset and then return it.   
+#  
+# Revision history:  2025-Oct-27  Lixin Sun  Initial creation
+#
+#############################################################################################################
+def read_multiple_geotiffs(ImgPath, KeyStrings, MonthStr = ''):
+  '''
+    Args:
+      ImgPath(string): A string containing the path to a given directory;
+      KeyStrings(List): A list of key strings for selecting a subset of GeoTiff files (files must contain
+                        one of the key strings in their filenames);
+      MonthStr(string): An optional string for filtering monthly data.'''  
+  
+  if not os.path.isdir(ImgPath):
+    print("<read_multiple_geotiffs> The given directory does not exist!")
+    return None
+  
+  #================================================================================================  
+  # Get all .tif files under the given directory
+  #================================================================================================  
+  all_files = glob.glob(os.path.join(ImgPath, "*.tif"))
+
+  #================================================================================================  
+  # Filter: keep only files that contain any of the key strings
+  #================================================================================================  
+  if len(MonthStr) > 0:
+    all_files = [f for f in all_files if MonthStr in os.path.basename(f)]
+    
+  selected_files = [f for f in all_files if any(key in os.path.basename(f) for key in KeyStrings)]
+  
+  if not selected_files:
+    print("<read_multiple_geotiffs> No matching GeoTIFF files found.")
+    return None
+  
+  #================================================================================================  
+  # Sort selected files based on their order in 'KeyStrings'
+  #================================================================================================  
+  #selected_files.sort()
+  sorted_files = [file for key in KeyStrings for file in selected_files if key in os.path.basename(file)]
+  
+  #================================================================================================   
+  # Read the selected files into an xarray DataArray
+  #================================================================================================  
+  bands = [rioxarray.open_rasterio(f) for f in sorted_files]
+  cube = xr.concat(bands, dim="band")
+ 
+  #================================================================================================  
+  # Assign band names based on the key strings
+  #================================================================================================    
+  cleaned_keys = [s.replace("_", "") for s in KeyStrings]
+  cube         = cube.assign_coords(band = cleaned_keys[:len(sorted_files)])
+  
+  print(cube)
+  return cube
+
+
 
 
 #############################################################################################################
@@ -597,3 +661,9 @@ def rescale_spec_bands(inImg, selected_vars, gain, offset):
 
   return inImg
 
+
+
+
+# ImgPath    = 'C:\Work_Data\S2_mosaic_ottawa2025_peak_20m_int8'
+# KeyStrings = ['blue_', 'green_', 'red_', 'edge1_', 'edge2_', 'edge3_', 'nir08_', 'swir16_', 'swir22_']
+# read_multiple_geotiffs(ImgPath, KeyStrings)

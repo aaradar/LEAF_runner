@@ -20,23 +20,24 @@ from datetime import datetime
 #############################################################################################################
 # DefaultParams = {
 #     'sensor': 'S2_SR',           # A sensor type and data unit string (e.g., 'S2_Sr' or 'L8_SR')    
-#     'unit': 2,                   # data unite (1=> TOA reflectance; 2=> surface reflectance)
+#     'unit': 2,                   # Data unite (1=> TOA reflectance; 2=> surface reflectance)
 #     'year': 2019,                # An integer representing image acquisition year
-#     'nbYears': 1,                # positive int for annual product, or negative int for monthly product
+#     'nbYears': 1,                # Positive int for annual product, or negative int for monthly product
 #     'months': [5,6,7,8,9,10],    # A list of integers represening one or multiple monthes     
 #     'tile_names': ['tile55'],    # A list of (sub-)tile names (defined using CCRS' tile griding system) 
 #     'prod_names': ['mosaic'],    # ['mosaic', 'LAI', 'fCOVER', ]
 #     'resolution': 30,            # Exporting spatial resolution
-#     'out_folder': '',            # the folder name for exporting
-#     'export_style': 'separate',
-#     'start_dates': [''],
-#     'end_dates':  [''],
-#     'scene_ID': '',
-#     'projection': 'EPSG:3979',
-#     'CloudScore': False,
+#     'out_folder': '',            # The folder name for exporting
+#     'export_style': 'separate',  # Two possible values are supported: 'separate' (default) or 'stack'
+#     'out_datatype': 'int16',     # Two possible values are supported: 'int16' (default) or 'int8'
+#     'start_dates': [''],         # A list of strings representing starting dates, e.g., ['2024-06-15','2024-07-15']  
+#     'end_dates':  [''],          # A list of strings representing ending dates, e.g., ['2024-07-15','2024-08-15']
+#     'scene_ID': '',              # A single image ID
+#     'projection': 'EPSG:3979',   # Commonly used in CCRS
+#     'CloudScore': False,         # Default value is False
 
-#     'current_month': -1,
-#     'current_tile': '',
+#     'current_month': -1,         # Used internally in the code
+#     'current_tile': '',          # Used internally in the code
 #     'time_str': '',              # Mainly for creating output filename
 #     'region_str': ''             # Mainly for creating output filename
 # }
@@ -44,7 +45,7 @@ from datetime import datetime
 
 
 all_param_keys = ['sensor', 'ID', 'unit', 'bands', 'year', 'nbYears', 'months', 'tile_names', 'prod_names', 
-                  'out_location', 'resolution', 'GCS_bucket', 'out_folder', 'export_style', 'projection', 'CloudScore',
+                  'out_location', 'resolution', 'GCS_bucket', 'out_folder', 'export_style', 'out_datatype', 'projection', 'CloudScore',
                   'monthly', 'start_dates', 'end_dates', 'regions', 'scene_ID', 'current_time', 'current_region', 
                   'time_str','cloud_cover', 'SsrData', 'Criteria', 'IncludeAngles', 'debug', 'entire_tile',
                   'nodes', 'node_memory', 'number_workers', 'account', 'standardized']
@@ -107,6 +108,8 @@ def get_query_conditions(inParams, StartStr, EndStr, Region):
   # https://planetarycomputer-staging.microsoft.com/api/stac/v1 (this info comes from 
   # https://www.matecdev.com/posts/landsat-sentinel-aws-s3-python.html)
   #==================================================================================================
+  print(f'\n\n <get_query_conditions> inParams = {inParams}')
+
   SsrData     = inParams['SsrData']
   ssr_code    = SsrData['SSR_CODE']
   resolution  = inParams['resolution']
@@ -142,7 +145,7 @@ def get_query_conditions(inParams, StartStr, EndStr, Region):
     query_conds['collection'] = ["landsat-c2-l2"]
     query_conds['bands']      = ['blue', 'green', 'red', 'nir08', 'swir16', 'swir22', 'qa_pixel']
   
-  elif ssr_code > eoIM.MOD_sensor and resolution > 25:
+  elif ssr_code > eoIM.MOD_sensor and resolution >= 10:
     # For HLS data from NASA data centre
     if ssr_code == eoIM.HLSS30_sensor:
       query_conds['collection'] = ["HLSS30_2.0"]
@@ -396,7 +399,9 @@ def valid_user_params(UserParams):
   #==========================================================================================================  
   outParams = UserParams
 
+  #----------------------------------------------------------------------------------------------------------
   # Fill or valid 'sensor' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'sensor' not in outParams:
     outParams['sensor'] = 'S2_SR'
   else:  
@@ -408,7 +413,9 @@ def valid_user_params(UserParams):
   
   outParams['SsrData'] = eoIM.SSR_META_DICT[str(outParams['sensor']).upper()]
 
+  #----------------------------------------------------------------------------------------------------------
   # Fill or valid 'year' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'year' not in outParams:
     outParams['year'] = datetime.now().year
   else:  
@@ -417,7 +424,9 @@ def valid_user_params(UserParams):
       all_valid = False
       print('<valid_user_params> Invalid year was specified!')
 
+  #----------------------------------------------------------------------------------------------------------
   # Fill or valid 'bands' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'bands' in outParams:
     bands = outParams['bands']
     valid_bands = eoIM.SSR_META_DICT[str(outParams['sensor']).upper()]["ALL_BANDS"]
@@ -427,7 +436,9 @@ def valid_user_params(UserParams):
         print(f'<valid_user_params> Invalid band name, {band}, was specified!')
     outParams['bands'] = [band.lower() for band in bands]
   
+  #----------------------------------------------------------------------------------------------------------
   # Fill or valid 'nbYears' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'nbYears' not in outParams:
     outParams['nbYears'] = 1
   else:  
@@ -435,7 +446,9 @@ def valid_user_params(UserParams):
       all_valid = False
       print('<valid_user_params> Invalid number of years was specified!')
 
+  #----------------------------------------------------------------------------------------------------------
   # Fill or valid 'prod_names' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'prod_names' not in outParams:
     outParams['prod_names'] = []
   else:  
@@ -451,7 +464,9 @@ def valid_user_params(UserParams):
       all_valid = False
       print('<valid_user_params> At least one of the specified products is invalid!')
   
+  #----------------------------------------------------------------------------------------------------------
   # Fill or valid 'out_location' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'out_location' not in outParams:
     outParams['out_location'] = 'drive'
   else:  
@@ -460,7 +475,9 @@ def valid_user_params(UserParams):
       all_valid = False
       print('<valid_user_params> Invalid out location was specified!')
 
+  #----------------------------------------------------------------------------------------------------------
   # Fill or valid 'resolution' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'resolution' not in outParams:
     outParams['resolution'] = 30
   else:  
@@ -474,7 +491,13 @@ def valid_user_params(UserParams):
         print(f'<valid_user_params> {resolution}m resolution images are only available in Sentinel-2 catalog of AWS!')
         all_valid = False
   
+  if outParams['SsrData']['SSR_CODE'] >= eoIM.HLSS30_sensor and int(outParams['resolution']) < 20:
+    # For HLS data, the minimal resolution is 20m 
+    outParams['resolution'] = 20
+
+  #----------------------------------------------------------------------------------------------------------
   # Fill or valid 'out_folder' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'out_folder' not in outParams:
     outParams['out_folder'] = outParams['sensor'] + '_' + outParams['year'] + '_results' 
   else:
@@ -483,7 +506,9 @@ def valid_user_params(UserParams):
       all_valid = False
       print('<valid_user_params> The specified output path is invalid!')
   
+  #----------------------------------------------------------------------------------------------------------
   # Fill or valid 'months' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'months' not in outParams:
     outParams['months'] = []
   else:      
@@ -492,7 +517,9 @@ def valid_user_params(UserParams):
       all_valid = False
       print('<valid_user_params> Invalid month number was specified!')
 
+  #----------------------------------------------------------------------------------------------------------
   # Fill or valid 'tile_names' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'tile_names' not in outParams:
     outParams['tile_names'] = []
   else:
@@ -520,7 +547,9 @@ def valid_user_params(UserParams):
       if len(region_coords) != 5 or region_coords[0] != region_coords[-1]:
           raise ValueError("Coordinates must be a closed polygon with 5 points (first equals last).")
   
+  #----------------------------------------------------------------------------------------------------------
   # Fill or valid 'cloud_cover' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'cloud_cover' not in outParams:
     outParams['cloud_cover'] = 80
   else:
@@ -528,21 +557,41 @@ def valid_user_params(UserParams):
     if cloud_cover > 100 or cloud_cover < 0:
       outParams['cloud_cover'] = 80
 
+  #----------------------------------------------------------------------------------------------------------
   # Fill or valid 'export_style' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'export_style' not in outParams:
     outParams['export_style'] = 'separate'
-  
+  elif 'separate' not in outParams['export_style'] and 'stack' not in outParams['export_style']:
+    outParams['export_style'] = 'separate'
+
+  #----------------------------------------------------------------------------------------------------------
+  # Fill or valid 'out_datetype' parameter
+  #----------------------------------------------------------------------------------------------------------
+  if 'out_datatype' not in outParams:
+    outParams['out_datatype'] = 'int16'
+  elif '16' not in outParams['out_datatype'] and '8' not in outParams['out_datatype']:
+    outParams['out_datatype'] = 'int16'
+   
+  #----------------------------------------------------------------------------------------------------------
+  # Fill or valid 'projection' parameter
+  #---------------------------------------------------------------------------------------------------------- 
   if 'projection' not in outParams:
     outParams['projection'] = 'EPSG:3979'
   
+  #----------------------------------------------------------------------------------------------------------
+  # Fill or valid 'IncludeAngles' parameter
+  #----------------------------------------------------------------------------------------------------------
   if 'IncludeAngles' not in outParams:
     outParams['IncludeAngles'] = False  
 
+  #----------------------------------------------------------------------------------------------------------
+  # Fill or valid 'CloudScore' parameter
+  #----------------------------------------------------------------------------------------------------------
   sensor_type = outParams['sensor'].lower()
   if sensor_type.find('s2') < 0:
     outParams['CloudScore'] = False 
-
-  # validate region
+  
   return all_valid, outParams
 
 
@@ -628,7 +677,7 @@ def form_spatial_regions(inParams):
 #                                            and spatial region.
 #                    2024-Sep-03  Lixin Sun  Adjusted to ensure that regular months/season will also be 
 #                                            handled as customized time windows.  
-#                    2025_Sep-23  Lixin Sun  added checking and setting for 'standardized' key, which serves
+#                    2025-Sep-23  Lixin Sun  added checking and setting for 'standardized' key, which serves
 #                                            as a lock to prevent a parameter dictionary from being 
 #                                            standardized twice.  
 #############################################################################################################

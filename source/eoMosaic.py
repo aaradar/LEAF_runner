@@ -164,7 +164,7 @@ def display_meta_assets(stac_items, First):
     print("Bounding Box:", first_item.bbox)
     print("Datetime:", first_item.datetime)
     properties = first_item.properties
-    print(f'cloud cover: {properties['eo:cloud_cover']}')
+    print(f"cloud cover: {properties['eo:cloud_cover']}")
     print("Properties:")
 
     for key, value in properties.items():
@@ -1233,7 +1233,7 @@ def create_mosaic_at_once_distributed(base_img, unique_granules, stac_items, Mos
 # Revision history:  2024-Oct-18  Lixin Sun  Initial creation
 #
 #############################################################################################################
-def create_mosaic_at_once(BaseImg, unique_granules, stac_items, MosaicParams):
+def create_mosaic_at_once_one_machine(BaseImg, unique_granules, stac_items, MosaicParams):
   """
     Args:
       BaseImg(XArray): A XArray object to store the final composite image covering the entire ROI;
@@ -1363,7 +1363,7 @@ def one_mosaic(ProdParams, CompParams, Output=True):
   # Create submosaic separately for each granule in parallel and on distributed workers
   #==========================================================================================================
   if CompParams["debug"]:
-    submited_granules_mosaics, client, cluster, unique_name = create_mosaic_at_once(base_img, unique_granules, stac_items, ProdParams)
+    submited_granules_mosaics, client, cluster, unique_name = create_mosaic_at_once_one_machine(base_img, unique_granules, stac_items, ProdParams)
   else:
     submited_granules_mosaics, client, cluster, unique_name = create_mosaic_at_once_distributed(base_img, unique_granules, stac_items, ProdParams)
   
@@ -1465,7 +1465,11 @@ def export_mosaic(inParams, inMosaic):
   #==========================================================================================================
   # Convert float pixel values to integers and then reproject the mosaic image
   #==========================================================================================================
-  mosaic_int = (inMosaic * 100.0).astype(np.int16)
+  if '16' in inParams['out_datatype']:
+    mosaic_int = (inMosaic * 100.0).astype(np.int16)
+  else:  
+    mosaic_int = (inMosaic).astype(np.int8)   # For testing integer value band images
+
   rio_mosaic = mosaic_int.rio.write_crs(inParams['projection'], inplace=True)  # Assuming WGS84 for this example
 
   #==========================================================================================================

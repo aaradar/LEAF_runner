@@ -49,6 +49,233 @@
 
 # print(f"Clustering completed! Saved result to {output_file}")
 
+
+import numpy as np
+import rasterio
+import faiss
+
+import eoImage as eoImg
+
+
+###################################################################################################
+# Description: This function loads multiple single-band TIFF images and stacks them into a 
+#              multi-band image.
+###################################################################################################
+def load_band_images(ImagePaths, NoVal = 0):
+  """
+    Inputs: 
+      ImagePaths: list of strings defining the full paths to all band images;
+      NoVal: value representing no-data in the images (e.g., 0, -9999, etc.)
+
+    Returns:
+      image (H, W, C)
+      mask  (H, W) boolean mask of valid pixels
+      profile: rasterio profile of the first band (for saving)
+  """
+  #================================================================================================
+  # Load all band images
+  #================================================================================================
+  bands = []
+  profile = None
+  for fp in ImagePaths:
+    with rasterio.open(fp) as src:
+      bands.append(src.read(1).astype(np.float32))
+      if profile is None:
+        profile = src.profile  # keep metadata if needed later
+  
+  #================================================================================================
+  # Stack band images into a multi-band image
+  #================================================================================================
+  image = np.stack(bands, axis=-1)  # (H, W, C)
+  
+  mask  = np.all(image != NoVal, axis=-1)
+
+  return image, mask, profile
+
+
+
+
+###################################################################################################
+# Description: This function separate valid pixels in "img" into two groups: reference pixels and
+#              gap pixels
+#             
+###################################################################################################
+def separate_valid_pixels(img, valid_mask, gap_mask):
+  """
+    Inputs:
+      img: (H, W, C) multispectral image
+      valid_mask: (H, W) boolean mask (True = valid pixel)
+      gap_mask: (H, W) boolean mask (True = gap pixel)
+
+    Returns:
+      ref_pixels: (N_ref, C) array of reference pixel spectra
+      gap_pixels: (N_gap, C) array of gap pixel spectra
+      ref_coords: (N_ref, 2) array of (row, col) coordinates of reference pixels
+      gap_coords: (N_gap, 2) array of (row, col) coordinates of gap pixels
+  """
+
+  # Only consider valid pixels
+  combined_mask = valid_mask.copy()
+
+  # Reference pixels: valid & NOT gap
+  ref_pixels_mask = combined_mask & (~gap_mask)
+
+  # Gap pixels: valid & gap
+  gap_pixels_mask = combined_mask & gap_mask
+
+  # Extract pixel spectra into arrays
+  ref_pixels = img[ref_pixels_mask]  # shape (N_ref, C)
+  gap_pixels = img[gap_pixels_mask]  # shape (N_gap, C)
+
+  # Optional: coordinates of each pixel in the original image
+  ref_coords = np.column_stack(np.where(ref_pixels_mask))  # (row, col)
+  gap_coords = np.column_stack(np.where(gap_pixels_mask))
+
+  return ref_pixels, gap_pixels, ref_coords, gap_coords
+
+
+
+
+###################################################################################################
+# Description: This function builds FAISS index and coordinate lookup table from "img" and "mask".
+#
+# Revision history:  2025-Nov-20  Lixin Sun
+###################################################################################################
+def build_faiss_index(img, mask, metric="cosine", use_ivf=False, nlist=1024):
+  """
+    Inputs:
+      img: H x W x C multispectral image
+      mask: H x W boolean (True = valid pixel)
+      metric: "cosine", "euclidean"
+      use_ivf: bool, whether to use IVF index
+      nlist: number of IVF lists (initially created clusters if use_ivf=True)
+
+    Returns:
+      index: faiss index (searchable)
+      coords: (N_valid, 2) array mapping index -> (row, col)
+      valid_pixels: (N_valid, C) array used to build index (float32)
+  """
+
+  H, W, C = img.shape
+  #================================================================================================
+  # Extract and flaten all valid pixels into (N, C), where N and C are number of valid pixels and 
+  # number of bands, respectively.
+  #================================================================================================
+  valid_pixels = img[mask].reshape(-1, C).astype("float32")
+
+  # Store original pixel coordinates
+  coords = np.column_stack(np.where(mask))  # shape (N, 2)
+
+  #================================================================================================
+  # Build index container depending on "metric" and "use_ivf"
+  #================================================================================================
+  if metric == "cosine":
+    # Normalize vectors -> inner product == cosine similarity
+    faiss.normalize_L2(valid_pixels)
+
+    if use_ivf:
+      quantizer = faiss.IndexFlatIP(C)
+      index     = faiss.IndexIVFFlat(quantizer, C, nlist, faiss.METRIC_INNER_PRODUCT)
+      index.train(valid_pixels)
+    else:
+      index = faiss.IndexFlatIP(C)
+
+  elif metric == "euclidean":
+    if use_ivf:
+      quantizer = faiss.IndexFlatL2(C)
+      index     = faiss.IndexIVFFlat(quantizer, C, nlist, faiss.METRIC_L2)
+      index.train(valid_pixels)
+    else:
+      index = faiss.IndexFlatL2(C)
+
+  else:
+    raise ValueError("Unsupported metric: choose 'cosine' or 'euclidean'")
+  
+  #================================================================================================
+  # Add valid pixels, which must be a 2-D NumPy array of float32, to the index container
+  #================================================================================================
+  index.add(valid_pixels)
+
+  return index, coords
+
+
+
+
+
+
+
+
+###################################################################################################
+# Description: This function search querys  index for efficiently searching valid pixels in the given image.
+#
+# Revision history:  2025-Nov-20  Lixin Sun
+###################################################################################################
+def query_targets(target_pixels, index, coords, k=5, metric="cosine"):
+  """
+  target_pixels: array (M, C)
+  returns:
+      nn_coords: (M, k, 2)
+      scores: similarity or distance values
+  """
+
+  Xq = target_pixels.astype("float32")
+
+  # Normalize if cosine similarity
+  if metric == "cosine":
+    faiss.normalize_L2(Xq)
+
+  # FAISS batch search
+  scores, I = index.search(Xq, k)
+
+  # Convert FAISS indices → image coordinates
+  nn_coords = coords[I]
+
+  return nn_coords, scores
+
+
+
+
+
+
+
+
+###################################################################################################
+# Description: This function creates an index map for a given image cube using two or three bands. 
+#
+# Revision history:  2025-Oct-29  Lixin Sun
+###################################################################################################
+def create_index_map(ImgCube, BandNames, BufferWidth):
+  '''
+    Args:
+      ImgCube(xarray.DataSet): An xarray DataSet containing band images;
+      BandNames(List): A list of two or three band names (strings) to be used for index creation;
+      BufferWidth(float): A float specifying the spectral buffer width (in surface reflectance);
+      
+    Returns:
+      index_map(xarray.DataSet): An xarray DataSet containing created index map.
+  '''
+  
+  #================================================================================================
+  # Make sure the specified index bands are included in the input image cube
+  #================================================================================================
+  for band_name in BandNames:
+    if band_name not in ImgCube.band.values:
+      print(f"<create_index_map> The specified band '{band_name}' is not in the input image cube!")
+      return None 
+    
+  #================================================================================================
+  # Create an empty index map that has identical spatial dimensions as the input image cube
+  #================================================================================================
+  index_map = xr.zeros_like(ImgCube.isel(band=0))  # Initialize index map with zeros
+
+  #================================================================================================     
+  # Create index map using two or three bands
+  #================================================================================================
+  if len(BandNames) == 2: 
+
+
+
+
 #############################################################################################################
 # Description: This function returns a dictionary that contains statistics (mean, STD and number of pixels)
 #              on each cluster.

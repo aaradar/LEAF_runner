@@ -129,8 +129,9 @@ def makeIndexLayer(LCMap, DSOptions):
   '''
      Args:
        LCMap(xaaray.dataset): A land cover map;
-       nbClsNets(Int): The number of networks for different land cover types;
-       DSOptions(Dictionary): A dictionary containing options for a satellite dataset (e.g., 'S2_SR' or 'L8_SR').'''
+       DSOptions(Dictionary): A dictionary containing options for a satellite dataset (e.g., 'S2_SR' or 'L8_SR').
+  '''
+  
   if LCMap is None:
     print('<makeIndexLayer> Landcover map is not available!')
     return None
