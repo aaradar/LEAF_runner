@@ -3,7 +3,7 @@
 import os
 import glob
 import datetime
-#import rasterio
+import rasterio
 import rioxarray
 
 import numpy as np
@@ -173,6 +173,63 @@ SSR_META_DICT = {
 DATA_TYPE   = ['S2_SR', 'LS8_SR', 'LS9_SR', 'LS7_SR', 'LS5_SR', 'S2_TOA', 'LS8_TOA', 'LS9_TOA', 'LS7_TOA', 'LS5_TOA']
 STD_6_BANDS = ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
 MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+
+
+
+###################################################################################################
+# Description: This function identifies the type of the given image object.
+#
+# Revision history:  2025-Jun-10  Lixin Sun  Initial creation
+###################################################################################################
+def identify_image_type(ImgObj):
+  if isinstance(ImgObj, xr.Dataset):
+    return "xarray.dataset"
+  elif isinstance(ImgObj, xr.DataArray):
+    return "xarray.dataarray"
+  elif isinstance(ImgObj, np.ndarray):
+    return "numpy.ndarray"
+  else:
+    return type(ImgObj).__name__
+
+
+
+###################################################################################################
+# Description: This function extracts a window image (WH x WW x C) around a given pixel at (x, y)
+#              from an image cube with shape (H, W, C).
+# Note: If the given pixel is close to the image boundary, the extracted window
+# Revision history:  2025-Nov-28  Lixin Sun  Initial creation
+###################################################################################################
+def extract_window(inImg, x, y, win=7):
+  """
+    Input:
+      inImg(H, W, C): the given image cube in np.ndarray format,
+      x, y: the pixel location of agiven pixel,
+      win: the window size (default is 7)
+      
+    Returns:  
+      winImg(WH, WW, C): the extracted window image. """
+    
+    #H, W, C = inImg.shape
+  wr = win // 2  # window radius (3 for 7×7)
+  ndim = inImg.ndim
+
+  if ndim == 3:
+    return inImg[x-wr:x+wr+1, y-wr:y+wr+1, :]
+  
+  elif ndim == 2:
+    return inImg[x-wr:x+wr+1, y-wr:y+wr+1]
+  
+  else:
+    raise ValueError("<extract_window> inImg must be 2D or 3D")
+
+  # Compute valid boundaries
+  x1 = max(0, x - wr)
+  x2 = min(H, x + wr + 1)
+  y1 = max(0, y - wr)
+  y2 = min(W, y + wr + 1)
+
+  return inImg[x1:x2, y1:y2, :]
 
 
 
@@ -558,7 +615,7 @@ def read_geotiff(ImgPath, OutName='band'):
 # Revision history:  2025-Oct-27  Lixin Sun  Initial creation
 #
 #############################################################################################################
-def read_multiple_geotiffs(ImgPath, KeyStrings, MonthStr = ''):
+def load_TIF_files_to_xr(ImgPath, KeyStrings, MonthStr = ''):
   '''
     Args:
       ImgPath(string): A string containing the path to a given directory;
@@ -583,7 +640,7 @@ def read_multiple_geotiffs(ImgPath, KeyStrings, MonthStr = ''):
     
   selected_files = [f for f in all_files if any(key in os.path.basename(f) for key in KeyStrings)]
   
-  if not selected_files:
+  if not selected_files or len(selected_files) < 2:
     print("<read_multiple_geotiffs> No matching GeoTIFF files found.")
     return None
   
@@ -607,6 +664,129 @@ def read_multiple_geotiffs(ImgPath, KeyStrings, MonthStr = ''):
   
   print(cube)
   return cube
+
+
+
+
+#############################################################################################################
+# Description: This function reads multiple GeoTIF images from a given local directory into a 3D Numpy array 
+#              and then return it.   
+#  
+# Revision history:  2025-Non-20  Lixin Sun  Initial creation
+#
+#############################################################################################################
+def load_TIF_files_to_npa(ImgPath, KeyStrings, MonthStr = '', NoVal = 0, SaveMaskPath=None):
+  '''
+    Args:
+      ImgPath(string): A string containing the path to a given directory;
+      KeyStrings(List): A list of key strings for selecting a subset of GeoTiff files (files must contain
+                        one of the key strings in their filenames);
+      MonthStr(string): An optional string for filtering monthly data;
+      NoVal(float): The no-data value used in the GeoTiff files.'''  
+  
+  if not os.path.isdir(ImgPath):
+    print("<read_multiple_geotiffs> The given directory does not exist!")
+    return None
+  
+  #================================================================================================  
+  # Get all .tif files under the given directory
+  #================================================================================================  
+  all_files = glob.glob(os.path.join(ImgPath, "*.tif"))
+
+  #================================================================================================  
+  # Filter: keep only files that contain any of the key strings
+  #================================================================================================  
+  if len(MonthStr) > 0:
+    all_files = [f for f in all_files if MonthStr in os.path.basename(f)]
+  
+  if len(KeyStrings) > 0:
+    selected_files = [f for f in all_files if any(k in f for k in KeyStrings)]
+    #selected_files = [f for f in all_files if any(key in os.path.basename(f) for key in KeyStrings)]
+  
+  if not selected_files or len(selected_files) < 1:
+    print("<read_multiple_geotiffs> No matching GeoTIFF files found.")
+    return None
+  
+  #================================================================================================  
+  # Sort selected files based on their order in 'KeyStrings'
+  #================================================================================================  
+  #selected_files.sort()
+  sorted_files = [file for key in KeyStrings for file in selected_files if key in os.path.basename(file)]
+  
+  #================================================================================================   
+  # Read the selected files into a list of 2D Numpy arrays
+  #================================================================================================  
+  bands = []
+  profile = None
+  for fp in sorted_files:
+    with rasterio.open(fp) as src:
+      bands.append(src.read(1).astype(np.float32))
+      if profile is None:
+        profile = src.profile  # keep metadata if needed later
+  
+  #================================================================================================
+  # Stack band images into a multi-band image
+  #================================================================================================
+  image = np.stack(bands, axis=-1)    # (H, W, C)
+  
+  mask  = np.all(image != NoVal, axis=-1)
+  
+  # Convert boolean → uint8 (True=1, False=0)
+  mask_uint8 = mask.astype(np.uint8)
+
+  #================================================================================================
+  # Optionally save mask GeoTIFF
+  #================================================================================================
+  if SaveMaskPath is not None:
+    # Update profile for single band, uint8 type
+    mask_profile = profile.copy()
+    mask_profile.update(
+        dtype=rasterio.uint8,
+        count=1,
+        nodata=None
+    )
+
+    with rasterio.open(SaveMaskPath, 'w', **mask_profile) as dst:
+      dst.write(mask_uint8, 1)
+
+  return image, mask_uint8, profile
+ 
+  
+
+
+#############################################################################################################
+# Description: This function saves Numpy Array to local hard drive as a GeoTIFF file.
+#  
+# Revision history:  2025-Nov-24  Lixin Sun  Initial creation
+#
+#############################################################################################################
+def save_npa_as_geotiff(outPath, npa, profile, DataType='int16'):
+  '''Saves a multi-band numpy array as a GeoTIFF file.
+  Args:
+    outPath(string): The output file path;
+    npa(np.ndarray): A 3D numpy array representing the image data (H, W, C);
+    profile(dict): A dictionary containing the metadata for the GeoTIFF file.'''  
+  
+  # Handle 2D and 3D arrays
+  if npa.ndim == 2:
+    count = 1
+    npa_to_write = [npa]  # wrap in list to iterate uniformly
+
+  elif npa.ndim == 3:
+    count = npa.shape[2]
+    npa_to_write = [npa[:, :, i] for i in range(count)]
+
+  else:
+    raise ValueError("npa must be a 2D or 3D NumPy array.")
+  
+  # Update the profile to reflect the number of layers
+  profile.update(count = count, dtype=DataType)    
+
+  with rasterio.open(outPath, 'w', **profile) as dst:
+    # for i in range(npa.shape[2]):
+    #   dst.write(npa[:, :, i], i + 1)  # Bands are 1-indexed in rasterio 
+    for i, band in enumerate(npa_to_write, start=1):  # bands are 1-indexed
+      dst.write(band, i)
 
 
 
@@ -664,6 +844,10 @@ def rescale_spec_bands(inImg, selected_vars, gain, offset):
 
 
 
-# ImgPath    = 'C:\Work_Data\S2_mosaic_ottawa2025_peak_20m_int8'
+# ImgPath    = "C:\\Work_Data\\S2_mosaic_vancouver2020_20m_for_testing_gap_filling"
 # KeyStrings = ['blue_', 'green_', 'red_', 'edge1_', 'edge2_', 'edge3_', 'nir08_', 'swir16_', 'swir22_']
-# read_multiple_geotiffs(ImgPath, KeyStrings)
+# load_TIF_files_to_npa(ImgPath, KeyStrings, MonthStr = 'Jul_')
+#load_TIF_files_to_npa(ImgPath, KeyStrings, MonthStr = 'Aug_')
+
+
+

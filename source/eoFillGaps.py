@@ -57,42 +57,6 @@ import faiss
 import eoImage as eoImg
 
 
-###################################################################################################
-# Description: This function loads multiple single-band TIFF images and stacks them into a 
-#              multi-band image.
-###################################################################################################
-def load_band_images(ImagePaths, NoVal = 0):
-  """
-    Inputs: 
-      ImagePaths: list of strings defining the full paths to all band images;
-      NoVal: value representing no-data in the images (e.g., 0, -9999, etc.)
-
-    Returns:
-      image (H, W, C)
-      mask  (H, W) boolean mask of valid pixels
-      profile: rasterio profile of the first band (for saving)
-  """
-  #================================================================================================
-  # Load all band images
-  #================================================================================================
-  bands = []
-  profile = None
-  for fp in ImagePaths:
-    with rasterio.open(fp) as src:
-      bands.append(src.read(1).astype(np.float32))
-      if profile is None:
-        profile = src.profile  # keep metadata if needed later
-  
-  #================================================================================================
-  # Stack band images into a multi-band image
-  #================================================================================================
-  image = np.stack(bands, axis=-1)  # (H, W, C)
-  
-  mask  = np.all(image != NoVal, axis=-1)
-
-  return image, mask, profile
-
-
 
 
 ###################################################################################################
@@ -100,12 +64,12 @@ def load_band_images(ImagePaths, NoVal = 0):
 #              gap pixels
 #             
 ###################################################################################################
-def separate_valid_pixels(img, valid_mask, gap_mask):
+def separate_valid_pixels(ReferImg, ReferMask, GapMask):
   """
     Inputs:
-      img: (H, W, C) multispectral image
-      valid_mask: (H, W) boolean mask (True = valid pixel)
-      gap_mask: (H, W) boolean mask (True = gap pixel)
+      ReferImg(H, W, C): A given multispectral reference image
+      ReferMask(H, W): A pixel mask (1 = valid pixel) for valid pixels in the reference image
+      GapMask(H, W): A pixel mask (1 = gap pixel) for gap pixels in the target image
 
     Returns:
       ref_pixels: (N_ref, C) array of reference pixel spectra
@@ -114,24 +78,28 @@ def separate_valid_pixels(img, valid_mask, gap_mask):
       gap_coords: (N_gap, 2) array of (row, col) coordinates of gap pixels
   """
 
-  # Only consider valid pixels
-  combined_mask = valid_mask.copy()
+  # make a copy of the pixel mask for valid pixels in reference image
+  combined_mask = ReferMask.copy()
 
-  # Reference pixels: valid & NOT gap
-  ref_pixels_mask = combined_mask & (~gap_mask)
+  # Create a pixel mask identifying the valid pixels in both the target and reference images
+  ref_pixels_mask = combined_mask & (1 - GapMask)
 
-  # Gap pixels: valid & gap
-  gap_pixels_mask = combined_mask & gap_mask
+  # Create a pixel mask identifying the gap pixels in target image, but valid in reference image
+  gap_pixels_mask = combined_mask & GapMask
 
-  # Extract pixel spectra into arrays
-  ref_pixels = img[ref_pixels_mask]  # shape (N_ref, C)
-  gap_pixels = img[gap_pixels_mask]  # shape (N_gap, C)
+  # Extract shared valid pixels in both the target and reference images
+  ref_rows, ref_cols = np.where(ref_pixels_mask == 1)
+  shared_valid_pixs = ReferImg[ref_rows, ref_cols]  # shape (N_ref, C)
+
+  # Extract valid pixels in the reference image corresponding to gap pixels in target image
+  gap_rows, gap_cols = np.where(gap_pixels_mask == 1)
+  valid_gap_pixs = ReferImg[gap_rows, gap_cols]  # shape (N_gap, C)
 
   # Optional: coordinates of each pixel in the original image
-  ref_coords = np.column_stack(np.where(ref_pixels_mask))  # (row, col)
-  gap_coords = np.column_stack(np.where(gap_pixels_mask))
+  shared_valid_coords = np.column_stack((ref_rows, ref_cols))  # (row, col)
+  valid_gap_coords    = np.column_stack((gap_rows, gap_cols))
 
-  return ref_pixels, gap_pixels, ref_coords, gap_coords
+  return shared_valid_pixs, valid_gap_pixs, shared_valid_coords, valid_gap_coords
 
 
 
@@ -141,64 +109,100 @@ def separate_valid_pixels(img, valid_mask, gap_mask):
 #
 # Revision history:  2025-Nov-20  Lixin Sun
 ###################################################################################################
-def build_faiss_index(img, mask, metric="cosine", use_ivf=False, nlist=1024):
-  """
-    Inputs:
-      img: H x W x C multispectral image
-      mask: H x W boolean (True = valid pixel)
-      metric: "cosine", "euclidean"
-      use_ivf: bool, whether to use IVF index
-      nlist: number of IVF lists (initially created clusters if use_ivf=True)
+# def build_faiss_index(ImgArr, Coords, metric="cosine", use_ivf=False, nlist=1024):
+#   """
+#     Inputs:
+#       ImgArr: (N x C) multispectral image array, N = number of pixels, C = number of bands
+#       metric: "cosine", "euclidean"
+#       use_ivf: bool, whether to use IVF index
+#       nlist: number of IVF lists (initially created clusters if use_ivf=True)
 
-    Returns:
-      index: faiss index (searchable)
-      coords: (N_valid, 2) array mapping index -> (row, col)
-      valid_pixels: (N_valid, C) array used to build index (float32)
-  """
+#     Returns:
+#       index: faiss index (searchable)
+#       coords: (N_valid, 2) array mapping index -> (row, col)
+#       valid_pixels: (N_valid, C) array used to build index (float32)
+#   """
 
-  H, W, C = img.shape
-  #================================================================================================
-  # Extract and flaten all valid pixels into (N, C), where N and C are number of valid pixels and 
-  # number of bands, respectively.
-  #================================================================================================
-  valid_pixels = img[mask].reshape(-1, C).astype("float32")
+#   N, C = ImgArr.shape
+#   #================================================================================================
+#   # Extract and flaten all valid pixels into (N, C), where N and C are number of valid pixels and 
+#   # number of bands, respectively.
+#   #================================================================================================
+#   #valid_pixels = img[mask == 1].reshape(-1, C).astype("float32")
 
-  # Store original pixel coordinates
-  coords = np.column_stack(np.where(mask))  # shape (N, 2)
+#   # Store original pixel coordinates
+#   #coords = np.column_stack(np.where(mask))  # shape (N, 2)
 
-  #================================================================================================
-  # Build index container depending on "metric" and "use_ivf"
-  #================================================================================================
-  if metric == "cosine":
-    # Normalize vectors -> inner product == cosine similarity
-    faiss.normalize_L2(valid_pixels)
+#   #================================================================================================
+#   # Build index container depending on "metric" and "use_ivf"
+#   #================================================================================================
+#   if metric == "cosine":
+#     # Normalize vectors -> inner product == cosine similarity
+#     faiss.normalize_L2(ImgArr)
 
-    if use_ivf:
-      quantizer = faiss.IndexFlatIP(C)
-      index     = faiss.IndexIVFFlat(quantizer, C, nlist, faiss.METRIC_INNER_PRODUCT)
-      index.train(valid_pixels)
-    else:
-      index = faiss.IndexFlatIP(C)
+#     if use_ivf:
+#       quantizer = faiss.IndexFlatIP(C)
+#       index     = faiss.IndexIVFFlat(quantizer, C, nlist, faiss.METRIC_INNER_PRODUCT)
+#       index.train(ImgArr)
+#     else:
+#       index = faiss.IndexFlatIP(C)
 
-  elif metric == "euclidean":
-    if use_ivf:
-      quantizer = faiss.IndexFlatL2(C)
-      index     = faiss.IndexIVFFlat(quantizer, C, nlist, faiss.METRIC_L2)
-      index.train(valid_pixels)
-    else:
-      index = faiss.IndexFlatL2(C)
+#   elif metric == "euclidean":
+#     if use_ivf:
+#       quantizer = faiss.IndexFlatL2(C)
+#       index     = faiss.IndexIVFFlat(quantizer, C, nlist, faiss.METRIC_L2)
+#       index.train(ImgArr)
+#     else:
+#       index = faiss.IndexFlatL2(C)
 
-  else:
-    raise ValueError("Unsupported metric: choose 'cosine' or 'euclidean'")
+#   else:
+#     raise ValueError("Unsupported metric: choose 'cosine' or 'euclidean'")
   
-  #================================================================================================
-  # Add valid pixels, which must be a 2-D NumPy array of float32, to the index container
-  #================================================================================================
-  index.add(valid_pixels)
+#   #================================================================================================
+#   # Add valid pixels, which must be a 2-D NumPy array of float32, to the index container
+#   #================================================================================================
+#   index.add(ImgArr)
 
-  return index, coords
+#   return index, Coords
 
 
+
+def build_faiss_index(ImgArr, Coords, metric="cosine", use_ivf=False, nlist=1024):
+    ImgArr = ImgArr.astype("float32").copy()  # avoid modifying original
+
+    N, C = ImgArr.shape
+
+    # ------------------------------------------------------------------
+    # Cosine normalization
+    # ------------------------------------------------------------------
+    if metric == "cosine":
+        faiss.normalize_L2(ImgArr)
+
+    # ------------------------------------------------------------------
+    # Build FAISS index
+    # ------------------------------------------------------------------
+    if metric == "cosine":
+        quantizer = faiss.IndexFlatIP(C)
+        if use_ivf:
+            index = faiss.IndexIVFFlat(quantizer, C, nlist, faiss.METRIC_INNER_PRODUCT)
+            index.train(ImgArr)
+        else:
+            index = quantizer
+
+    elif metric == "euclidean":
+        quantizer = faiss.IndexFlatL2(C)
+        if use_ivf:
+            index = faiss.IndexIVFFlat(quantizer, C, nlist, faiss.METRIC_L2)
+            index.train(ImgArr)
+        else:
+            index = quantizer
+    else:
+        raise ValueError("Unsupported metric")
+
+    # Add vectors
+    index.add(ImgArr)
+
+    return index, Coords
 
 
 
@@ -206,7 +210,7 @@ def build_faiss_index(img, mask, metric="cosine", use_ivf=False, nlist=1024):
 
 
 ###################################################################################################
-# Description: This function search querys  index for efficiently searching valid pixels in the given image.
+# Description: This function searchs index for efficiently searching valid pixels in the given image.
 #
 # Revision history:  2025-Nov-20  Lixin Sun
 ###################################################################################################
@@ -235,148 +239,113 @@ def query_targets(target_pixels, index, coords, k=5, metric="cosine"):
 
 
 
+def estimate_gap_pixels(TargetImg, Coords, scores):
+  """
+    Inputs:
+      TargetImg(H, W, C): A given multispectral target image with gaps;
+      nn_coords(M, k, 2): An array of nearest neighbor coordinates for M gap pixels;
+      scores(M, k): An array of similarity or distance scores for M gap pixels; """
 
+  # coords shape: (G, K, 2)  -> (4520, 7, 2)
+  G, K, _ = Coords.shape
 
+  # Split row and column indices
+  rows = Coords[:, :, 0]
+  cols = Coords[:, :, 1]
 
+  # Extract pixel spectra based on row and col coordinates
+  # Result shape: (G, K, C)
+  pixel_groups = TargetImg[rows, cols]  
 
-###################################################################################################
-# Description: This function creates an index map for a given image cube using two or three bands. 
-#
-# Revision history:  2025-Oct-29  Lixin Sun
-###################################################################################################
-def create_index_map(ImgCube, BandNames, BufferWidth):
-  '''
-    Args:
-      ImgCube(xarray.DataSet): An xarray DataSet containing band images;
-      BandNames(List): A list of two or three band names (strings) to be used for index creation;
-      BufferWidth(float): A float specifying the spectral buffer width (in surface reflectance);
-      
-    Returns:
-      index_map(xarray.DataSet): An xarray DataSet containing created index map.
-  '''
+  # Compute mean spectrum across the K pixels
+  # Result shape: (G, C)
+  mean_spectra = pixel_groups.mean(axis=1)
   
+  return mean_spectra
+
+
+
+def assign_estimated_pixels(TargetImg, GapCoords, EstimatedPixels):
+  """
+    Inputs:
+      TargetImg(H, W, C): A given multispectral target image with gaps;
+      GapCoords(N, 2): An array of coordinates for N gap pixels;
+      EstimatedPixels(N, C): An array of estimated pixel spectra for N gap pixels;
+  """
+  # Split row and column indices
+  rows = GapCoords[:, 0]
+  cols = GapCoords[:, 1]
+
+  # Assign estimated pixel spectra to the target image at the gap coordinates
+  TargetImg[rows, cols] = EstimatedPixels
+
+  return TargetImg
+
+
+
+def save_filled_image(FilledImg, Profile, SavePath):
+  """
+    Inputs:
+      FilledImg(H, W, C): A given multispectral gap-filled target image;
+      Profile: rasterio profile for saving the image;
+      SavePath(string): A string specifying the path to save the filled image.
+  """
+  out_type  = rasterio.int16
+  out_image = (FilledImg * 100).astype(out_type)
+
+  # Update profile for multi-band image
+  Profile.update(dtype=out_type, count=out_image.shape[2])
+
+  with rasterio.open(SavePath, 'w', **Profile) as dst:
+    for i in range(out_image.shape[2]):
+      dst.write(out_image[:, :, i].astype(out_type), i + 1)
+
+
+
+
+
+def fill_gaps(DataPath, TargetMonth, PreviousMonth, NextMonth, MaskPath):
+  """
+    Inputs:
+      DataPath(string): A string containing the path to a given data directory;
+      TargetMonth(string): A string specifying the target month for gap filling;
+      PreviousMonth(string): A string specifying the month before the target month;
+      NextMonth(string): A string specifying the month after the target month.
+  """
   #================================================================================================
-  # Make sure the specified index bands are included in the input image cube
+  # Load target month image and its valid mask
   #================================================================================================
-  for band_name in BandNames:
-    if band_name not in ImgCube.band.values:
-      print(f"<create_index_map> The specified band '{band_name}' is not in the input image cube!")
-      return None 
-    
-  #================================================================================================
-  # Create an empty index map that has identical spatial dimensions as the input image cube
-  #================================================================================================
-  index_map = xr.zeros_like(ImgCube.isel(band=0))  # Initialize index map with zeros
+  KeyStrings = ['blue_', 'green_', 'red_', 'edge1_', 'edge2_', 'edge3_', 'nir08_', 'swir16_', 'swir22_']
+  taget_img, taget_mask, taget_profile = eoImg.load_TIF_files_to_npa(DataPath, KeyStrings, TargetMonth)   #, 0, MaskPath)
+  refer_img, refer_mask, refer_profile = eoImg.load_TIF_files_to_npa(DataPath, KeyStrings, NextMonth)
 
-  #================================================================================================     
-  # Create index map using two or three bands
-  #================================================================================================
-  if len(BandNames) == 2: 
+  if taget_img is None or taget_mask is None:
+    print("<fill_gaps> Failed to load target month image or mask.")
+    return  
+  taget_img = taget_img * 0.01
+  refer_img = refer_img * 0.01
+  
+  gap_mask = 1 - taget_mask
+  shared_valid_pixs, valid_gap_pixs, shared_valid_coords, valid_gap_coords = separate_valid_pixels(refer_img, refer_mask, gap_mask)
 
+  #index, coords = build_faiss_index(refer_img, refer_mask, "euclidean", True)
+  index, shared_valid_coords = build_faiss_index(shared_valid_pixs, shared_valid_coords, "euclidean", True)
 
+  nn_coords, scores = query_targets(valid_gap_pixs, index, shared_valid_coords, 7, "euclidean")
 
+  #estimated_pixels = estimate_gap_pixels(taget_img, nn_coords, scores)
+  estimated_pixels = estimate_gap_pixels(taget_img, nn_coords, scores)
 
-#############################################################################################################
-# Description: This function returns a dictionary that contains statistics (mean, STD and number of pixels)
-#              on each cluster.
-#
-# Revision history:  2025-Feb-26  Lixin Sun  
-#############################################################################################################
-def cluster_stats(k_means, Data, n_clusters):
-  cluster_stats = {}
-
-  for cluster_id in range(n_clusters):
-    cluster_pixels = Data[k_means.labels_ == cluster_id]  # Extract pixels in this cluster
-    
-    if cluster_pixels.size > 0:  # Ensure there are pixels in the cluster
-      mean_values = np.mean(cluster_pixels, axis=0)  # Mean per band
-      std_values  = np.std(cluster_pixels, axis=0)  # Std deviation per band
-    else:
-      mean_values = std_values = np.zeros(num_bands)  # Placeholder if empty
-
-    cluster_stats[cluster_id] = {
-      "mean": mean_values,
-      "std": std_values,
-      "num_pixels": cluster_pixels.shape[0]
-    }
-
-  # Print results
-  for cluster_id, stats in cluster_stats.items():
-    print(f"Cluster {cluster_id}:")
-    print(f"  Mean per band: {stats['mean']}")
-    print(f"  Std deviation per band: {stats['std']}")
-    print(f"  Number of pixels: {stats['num_pixels']}\n")
+  
+  filled_target = assign_estimated_pixels(taget_img, valid_gap_coords, estimated_pixels)
+  
+  out_path = DataPath + '\\' + TargetMonth + '_filled.tif'
+  save_filled_image(filled_target, taget_profile, out_path)
+  
+  return
 
 
 
-import numpy as np
-import glob
-from sklearn import cluster
-from osgeo import gdal, osr
 
-# Enable GDAL exceptions
-gdal.UseExceptions()
-
-# Step 1: Get list of all TIFF files (Adjust path as needed)
-tif_files  = sorted(glob.glob("C:/Work_Data/S2_tile55_923_mosaic/*.tif"))  # Ensure proper ordering
-spec_files = [f for f in tif_files if 'tile' in f]
-
-if not spec_files:
-  raise FileNotFoundError("No TIFF files found in the specified directory!")
-else:
-  print('\n All spectral file names:\n')
-  print(spec_files)
-
-# Step 2: Read all TIFF files and stack them into a multi-band NumPy array
-bands = []
-ds_ref = gdal.Open(spec_files[0], gdal.GA_ReadOnly)  # Use first file as reference
-
-if ds_ref is None:
-  raise RuntimeError(f"Error opening {spec_files[0]}")
-
-geotransform = ds_ref.GetGeoTransform()  # Spatial reference
-projection   = ds_ref.GetProjection()  # Projection info
-width        = ds_ref.RasterXSize
-height       = ds_ref.RasterYSize
-
-for file in spec_files:
-  ds = gdal.Open(file, gdal.GA_ReadOnly)
-  if ds is None:
-    raise RuntimeError(f"Error opening {file}")
-    
-  band = ds.GetRasterBand(1).ReadAsArray()  # Read single-band raster
-  bands.append(band)
-
-# Convert list of 2D arrays into a 3D NumPy array (height, width, bands)
-img_stack = np.dstack(bands).astype(np.float32) / 100.0
-_, _, num_bands = img_stack.shape
-print(f"Image dimensions: {height}x{width} with {num_bands} bands")
-
-# Step 3: Reshape data for clustering (each pixel is a feature vector)
-X = img_stack.reshape((-1, num_bands))   # Shape: (num_pixels, num_bands)
-sample_size = min(1000000, X.shape[0])  # Limit to 100k samples
-X_sample = X[np.random.choice(X.shape[0], sample_size, replace=False)]
-
-# Step 4: Perform K-Means Clustering
-n_clusters = 500  # Adjust as needed
-k_means = cluster.MiniBatchKMeans(n_clusters=n_clusters, init="k-means++", n_init=10, random_state=42)
-k_means.fit(X_sample)
-
-cluster_stats(k_means, X_sample, n_clusters)
-
-# Step 5: Reshape cluster labels back to image dimensions
-#X_cluster = k_means.labels_.reshape(height, width)
-X_cluster = k_means.predict(X).reshape(height, width)
-
-# Step 6: Save the clustered image as a new raster with original georeferencing
-output_file = "C:/Work_Data/test_clustering/clustered_image_MBKM_500.tif"
-driver = gdal.GetDriverByName("GTiff")
-out_ds = driver.Create(output_file, width, height, 1, gdal.GDT_Int16)
-
-out_ds.SetGeoTransform(geotransform)  # Preserve spatial reference
-out_ds.SetProjection(projection)  # Preserve projection info
-out_ds.GetRasterBand(1).WriteArray(X_cluster)
-out_ds.FlushCache()
-out_ds = None  # Close file
-
-print(f"Clustering completed! Saved result to {output_file} with georeferencing.")
+fill_gaps('C:\\Work_Data\\S2_mosaic_vancouver2020_20m_for_testing_gap_filling', 'Jun', 'May', 'Jul', 
+          'C:\\Work_Data\\S2_mosaic_vancouver2020_20m_for_testing_gap_filling\\Jun_mask.tif')

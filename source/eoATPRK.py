@@ -7,12 +7,247 @@ import numpy as np
 import rasterio
 import matplotlib.pyplot as plt
 
+import eoImage as Img
+
+from joblib import Parallel, delayed
 from rasterio.enums import Resampling
-from pykrige.ok import OrdinaryKriging
+#from pykrige.ok import OrdinaryKriging
 from scipy.ndimage import uniform_filter
 from scipy import stats
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
+
+
+
+
+
+###################################################################################################
+# Description: This function returns a set of coefficients of a local mapping function between VNIR
+#              band windows and a target band window.
+#
+# Revision history:  2024-Nov-28  Lixin Sun  initial creation
+###################################################################################################
+def local_mapping_function(VNIRImg, TargetImg, x, y, WinSize=7):
+  """
+    Inputs:
+      VNIRImg: A given image cube containing VNIR band images [blue, green, red, and NIR].
+      TargetImg: A target band image/array at coarse resolution (e.g., 20-m).
+      x, y: Coordinates of the pixel to fit the local mapping function.
+
+    Returns:
+      coef: Coefficients of the local mapping function (including intercept).
+  """
+
+  if WinSize < 3:
+    WinSize = 3
+
+  VNIR_Win   = Img.extract_window(VNIRImg, x, y, WinSize)
+  target_Win = Img.extract_window(TargetImg, x, y, WinSize)
+
+  # Flatten spatial dimensions
+  flatVNIR   = VNIR_Win.reshape(-1, VNIR_Win.shape[2])        # shape = (49, 4)
+  flatTarget = target_Win.reshape(-1)         # shape = (49,)
+
+  # Add bias column of 1's → for intercept d
+  X_design = np.hstack([flatVNIR, np.ones((flatVNIR.shape[0], 1))])  # shape (49, 5)
+
+  # Solve least squares: [a1, a2, a3, a4, d]
+  params, _, _, _ = np.linalg.lstsq(X_design, flatTarget, rcond=None)
+  
+  coeffs = params[:-1]
+  bias = params[-1]
+
+  return coeffs, bias
+
+
+
+
+###################################################################################################
+# Description: This function parallelizes computation of local mapping function for all pixels.
+#
+# Revision history:  2024-Nov-28  Lixin Sun  initial creation
+###################################################################################################
+def compute_all_mappings(VNIRImg, TargetImg, Linear = True, WinSize=7, n_jobs=-1):
+  """
+    Inputs:
+      VNIRImg   : (H, W, 4) - VNIR image cube [blue, green, red, NIR]
+      TargetImg : (H, W)    - Target band image at coarse resolution
+      WinSize   : window size for local mapping function
+      Linear    : whether to use linear mapping only (True) or include nonlinear terms (False)
+      n-jobs    : number of parallel jobs (-1 means all available cores)
+
+      Returns:
+      A_coeff   : (H, W, 4)   # coefficients a1..a4
+      D_bias    : (H, W)      # intercept d.
+  """
+
+  if WinSize < 3:
+    WinSize = 3
+
+  H, W, C = VNIRImg.shape
+  if TargetImg.ndim == 3:
+    TargetImg = np.squeeze(TargetImg, axis=2)
+
+  if TargetImg.shape[0] != H or TargetImg.shape[1] != W:
+    raise ValueError("TargetImg must match VNIRImg spatial dimensions.")
+
+  wr = WinSize // 2  # window radius
+
+  #================================================================================================
+  # Pad the given images so boundary pixels still produce full windows
+  # Pad with edge values (replicate padding)
+  #================================================================================================
+  padded_VNIR = np.pad(VNIRImg, ((wr, wr), (wr, wr), (0, 0)), mode='edge')
+  padded_Tgt  = np.pad(TargetImg, ((wr, wr), (wr, wr)), mode='edge')
+
+  #================================================================================================
+  # Add nolinear components to the image cube if needed
+  #================================================================================================
+  if not Linear:
+    red = padded_VNIR[:, :, 2]
+    nir = padded_VNIR[:, :, 3]
+
+    red_nir = (red * nir)[:, :, None]
+    red_red = (red * red)[:, :, None]
+    nir_nir = (nir * nir)[:, :, None]
+
+    UsedImg = np.concatenate([padded_VNIR, red_nir, red_red, nir_nir], axis=2)
+  else:
+    UsedImg = padded_VNIR
+
+  #================================================================================================
+  # run local mapping on all pixels in parallel
+  #================================================================================================
+  nCoeffs = 4 if Linear else 7
+  A_coeff = np.zeros((H, W, nCoeffs), dtype=np.float32)
+  D_bias  = np.zeros((H, W), dtype=np.float32)
+
+  # Function to process one row of pixels
+  def process_row(x, UsedImg, padded_Tgt, wr, WinSize, W, nCoeffs):
+    row_coeffs = np.zeros((W, nCoeffs), dtype=np.float32)
+    row_bias   = np.zeros(W, dtype=np.float32)
+
+    for y in range(W):
+      coeffs, bias = local_mapping_function(UsedImg, padded_Tgt, x+wr, y+wr, WinSize)
+      row_coeffs[y] = coeffs
+      row_bias[y]   = bias
+
+    return row_coeffs, row_bias
+
+  # Run in parallel per row
+  results = Parallel(n_jobs=n_jobs, backend="loky")(
+    delayed(process_row)(x, UsedImg, padded_Tgt, wr, WinSize, W, nCoeffs) for x in range(H))
+
+#   results = []
+#   for x in range(H):
+#     result = process_row(x, UsedImg, padded_Tgt, wr, WinSize, W, nCoeffs)
+#     results.append(result)
+
+  #================================================================================================
+  # unpack results
+  #================================================================================================
+  for x, (row_coeffs, row_bias) in enumerate(results):
+    A_coeff[x, :, :] = row_coeffs
+    D_bias[x, :]     = row_bias
+
+  return A_coeff, D_bias
+
+
+
+
+###################################################################################################
+# Description: This function applys the regression coefficients derived from low-resolution (LR)
+#              images to a high-resolution (HR) VNIR image.
+#
+# Revision history:  2024-Nov-28  Lixin Sun  initial creation
+###################################################################################################
+def apply_mapping_coeffs(HR_VNIRImg, LR_Coeffs_Map, LR_bias_Map, H_to_L_ratio=2):
+  """
+    Inputs:
+      HR_VNIRImg   : (HR_H, HR_W, C) - High-resolution VNIR image (blue, green, red, NIR)
+      LR_Coeffs_Map: (LR_H, LR_W, C) - Coefficients map (a1..a4) at high resolution
+      LR_bias_Map  : (LR_H, LR_W)    - Bias map (d) at low resolution
+      H_to_L_ratio : int             - Ratio of high to low resolution (e.g., 2 for 20m->10m)
+
+    Output:
+      HR_TargetImg : (HR_H, HR_W)    - Predicted target band image at high resolution.
+  """
+
+  HR_H, HR_W, nBands  = HR_VNIRImg.shape
+  LR_H, LR_W, nCoeffs = LR_Coeffs_Map.shape
+
+  #================================================================================================
+  # Upsample the low-resolution coefficients to high-resolution by repeating in 2×2 blocks
+  #================================================================================================
+  HR_Coeffs_map = np.repeat(np.repeat(LR_Coeffs_Map, H_to_L_ratio, axis=0), H_to_L_ratio, axis=1)   # shape → (HR_H, HR_W, 4)
+  HR_bias_map   = np.repeat(np.repeat(LR_bias_Map,   H_to_L_ratio, axis=0), H_to_L_ratio, axis=1)   # shape → (LR_H, LR_W)
+
+  #================================================================================================
+  # Ensure dimensions match exactly (crop if necessary)
+  #================================================================================================
+  HR_Coeffs_map = HR_Coeffs_map[:HR_H, :HR_W, :]
+  HR_bias_map   = HR_bias_map[:HR_H, :HR_W]
+
+  #================================================================================================
+  # Apply the mapping: a1*B + a2*G + a3*R + a4*NIR + d
+  #================================================================================================
+  if nCoeffs == 4:
+    HR_TargetImg = (
+        HR_Coeffs_map[:, :, 0] * HR_VNIRImg[:, :, 0] +
+        HR_Coeffs_map[:, :, 1] * HR_VNIRImg[:, :, 1] +
+        HR_Coeffs_map[:, :, 2] * HR_VNIRImg[:, :, 2] +
+        HR_Coeffs_map[:, :, 3] * HR_VNIRImg[:, :, 3] +
+        HR_bias_map)
+  elif nCoeffs == 7:
+    red = HR_VNIRImg[:, :, 2]
+    nir = HR_VNIRImg[:, :, 3]
+
+    red_nir = red * nir
+    red_red = red * red
+    nir_nir = nir * nir
+
+    HR_TargetImg = (
+        HR_Coeffs_map[:, :, 0] * HR_VNIRImg[:, :, 0] +
+        HR_Coeffs_map[:, :, 1] * HR_VNIRImg[:, :, 1] +
+        HR_Coeffs_map[:, :, 2] * HR_VNIRImg[:, :, 2] +
+        HR_Coeffs_map[:, :, 3] * HR_VNIRImg[:, :, 3] +
+        HR_Coeffs_map[:, :, 4] * red_nir +
+        HR_Coeffs_map[:, :, 5] * red_red +
+        HR_Coeffs_map[:, :, 6] * nir_nir +
+        HR_bias_map)
+
+  return HR_TargetImg
+
+
+
+
+
+def Piecewise_SuperResolution(DataDir, Month, TargetName='swir16_'):
+  '''
+  '''
+
+  #KeyStrings = ['blue_', 'green_', 'red_', 'edge1_', 'edge2_', 'edge3_', 'nir08_', 'swir16_', 'swir22_']
+  HR_bands = ['blue_', 'green_', 'red_', 'nir08_']
+
+  VNIR_Img, VNIR_mask, VNIR_profile       = Img.load_TIF_files_to_npa(DataDir, HR_bands, Month)
+  target_Img, target_mask, target_profile = Img.load_TIF_files_to_npa(DataDir, [TargetName], Month)
+
+  coeff_map, offset_map = compute_all_mappings(VNIR_Img, target_Img, False, 7)
+
+  HR_Target = apply_mapping_coeffs(VNIR_Img, coeff_map, offset_map, 2)
+
+  outFile = DataDir + '\\' + 'cluster_map_20m.tif'
+
+  Img.save_npa_as_geotiff(outFile, HR_Target, target_profile)
+
+
+
+
+DataDir = 'C:\\Work_Data\\S2_mosaic_vancouver2020_20m_for_testing_gap_filling'
+Piecewise_SuperResolution(DataDir, 'Aug', 'swir16_')
+
+
+
 
 
 
@@ -33,7 +268,7 @@ def load_band_rasterio(path):
 
 
 ###################################################################################################
-# Description: Aggregate 10m array to 20m by averaging each 2x2 block. Assumes b10 shape is 
+# Description: Aggregate 10m array to 20m by averaging each 2x2 block. Assumes b10 shape is
 #              divisible by 2. Returns aggregated array of shape (h/2, w/2).
 ###################################################################################################
 def aggregate_10_to_20_mean(b10):
@@ -50,7 +285,7 @@ def aggregate_10_to_20_mean(b10):
     # reshape trick to block-average 2x2
     b10_blocks = b10_trim.reshape(h2//2, 2, w2//2, 2)
     agg = b10_blocks.mean(axis=(1, 3))
-    
+
     return agg
 
 
@@ -79,7 +314,7 @@ def fit_regression_on_coarse_slow(CoarseImg, AgregatedImgs):
 
 
 ###################################################################################################
-# Description: Fit multiple linear regression at coarse scale via normal equations (no full X). 
+# Description: Fit multiple linear regression at coarse scale via normal equations (no full X).
 #              This function returns coefficients (including intercept) and predicted coarse.
 ###################################################################################################
 def fit_regression_on_coarse_fast(CoarseImg, AgregatedImgs):
@@ -174,7 +409,7 @@ def compute_centroid_coords(meta):
     height = meta['height']
     cols   = np.arange(width)
     rows   = np.arange(height)
-    
+
     xx = transform[2] + cols * transform[0] + transform[0] / 2.0
     yy = transform[5] + rows * transform[4] + transform[4] / 2.0
 
