@@ -109,7 +109,7 @@ def get_query_conditions(inParams, StartStr, EndStr, Region):
   # https://planetarycomputer-staging.microsoft.com/api/stac/v1 (this info comes from 
   # https://www.matecdev.com/posts/landsat-sentinel-aws-s3-python.html)
   #==================================================================================================
-  print(f'\n\n <get_query_conditions> inParams = {inParams}')
+  #print(f'\n\n <get_query_conditions> inParams = {inParams}')
 
   SsrData     = inParams['SsrData']
   ssr_code    = SsrData['SSR_CODE']
@@ -733,8 +733,9 @@ def form_spatial_regions(inParams):
     inParams['regions'] = {}
     for tile_name in inParams['tile_names']:
       if eoTG.valid_tile_name(tile_name):
-        
-        inParams['regions'][tile_name] = eoTG.get_tile_polygon(tile_name)
+        raw_polygon = eoTG.get_tile_polygon(tile_name)
+        inParams['regions'][tile_name] = eoTG.expandSquare(raw_polygon, 0.2)
+        #inParams['regions'][tile_name] = eoTG.get_tile_polygon(tile_name)
     
     #return set_spatial_region(inParams, inParams['tile_names'][0])  
   

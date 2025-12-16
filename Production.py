@@ -72,7 +72,7 @@ CompParams = {
   "entire_tile" : False,     #
   "nodes"       : 1,
   "node_memory" : "100G",
-  'chunk_size': {'x': 1048, 'y': 1048}
+  'chunk_size': {'x': 2048, 'y': 2048}
 }
 
   
@@ -117,6 +117,10 @@ def MosaicProduction(ProdParams, CompParams):
     print('<MosaicProduction> Inconsistent input parameters!')
     return None
   
+  print('<MosaicProduction> User defined input parameters:')
+  for key, value in usedParams.items():
+    print(f'{key}: {value}')
+
   #==========================================================================================================
   # Generate composite images based on given input parameters
   #==========================================================================================================

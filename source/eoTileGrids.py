@@ -475,8 +475,12 @@ def expandSquare(Region, Delta):
       Delta(float): The amount by which the region expanded.'''
     
   coord_list = Region['coordinates'][0]
- 
-  delta  = Delta
+  nPts = len(coord_list)
+  if nPts < 4 or nPts > 5:
+    print('<expandSquare> Invalid number of points in tile polygon definition!!')
+    return {}
+  
+  delta  = abs(Delta)
   
   point1 = coord_list[0]
   point2 = coord_list[1]
@@ -484,8 +488,10 @@ def expandSquare(Region, Delta):
   point4 = coord_list[3]
 
   point1 = [point1[0] - delta, point1[1] + delta]
-  point2 = [point2[0] - delta, point2[1] + delta]
+  point2 = [point2[0] - delta, point2[1] - delta]
   point3 = [point3[0] + delta, point3[1] - delta]
   point4 = [point4[0] + delta, point4[1] + delta]
 
-  return [[point1, point2, point3, point4, point1]]
+  Region['coordinates'] = [[point1, point2, point3, point4, point1]]
+
+  return Region
