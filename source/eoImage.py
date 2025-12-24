@@ -627,7 +627,7 @@ def read_geotiff(ImgPath, OutName='band'):
 # Revision history:  2025-Oct-27  Lixin Sun  Initial creation
 #
 #############################################################################################################
-def load_TIF_files_to_xr(ImgPath, KeyStrings, MonthStr = ''):
+def load_TIF_files_to_xr(ImgPath:str, KeyStrings:list[str], MonthStr:str = ''):
   '''
     Args:
       ImgPath(string): A string containing the path to a given directory;
@@ -674,7 +674,9 @@ def load_TIF_files_to_xr(ImgPath, KeyStrings, MonthStr = ''):
   cleaned_keys = [s.replace("_", "") for s in KeyStrings]
   cube         = cube.assign_coords(band = cleaned_keys[:len(sorted_files)])
   
-  print(cube)
+  band_names = cube.coords['band'].values.tolist()
+  print(band_names)
+  
   return cube
 
 

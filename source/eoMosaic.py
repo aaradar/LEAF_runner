@@ -1715,6 +1715,9 @@ def merge_granule_mosaics(mosaic, base_img, pix_score):
     base_img(XArray): A base image to hold the resulting composite for entire ROI;
     pix_score(String): The string name of pixel score layer. """
   
+  #========================================================================================================
+  # If a granual mosaic is None, return the base image unchanged
+  #========================================================================================================
   if mosaic is None:
     return base_img
   

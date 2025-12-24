@@ -374,6 +374,14 @@ CAN_SUBTILES = {
 
 
 
+# The following three lines are used to freeze the original tile grids,
+# so that they will not be modified when the Notebook is run multiple times without restarting the kernel.
+import copy
+
+CAN_SUBTILES_ORIG   = copy.deepcopy(CAN_SUBTILES)
+CAN_FULL_TILES_ORIG = copy.deepcopy(CAN_FULL_TILES)
+
+
 
 
 #############################################################################################################
@@ -387,10 +395,10 @@ def valid_tile_name(inTileName):
   name_len  = len(tile_name)
 
   if name_len > 7:
-    tile_names = CAN_SUBTILES.keys()    
+    tile_names = CAN_SUBTILES_ORIG.keys()    
 
   else:
-    tile_names = CAN_FULL_TILES.keys()
+    tile_names = CAN_FULL_TILES_ORIG.keys()
 
   return tile_name in tile_names
 
@@ -408,10 +416,11 @@ def get_tile_polygon(inTileName):
   if valid_tile_name(inTileName):
     tile_name = str(inTileName)
     name_len = len(tile_name)
+
     if name_len > 7:
-      return CAN_SUBTILES[tile_name]
+      return copy.deepcopy(CAN_SUBTILES_ORIG[tile_name])
     else:
-      return CAN_FULL_TILES[tile_name]
+      return copy.deepcopy(CAN_FULL_TILES_ORIG[tile_name])      
   else:
     return None  
   

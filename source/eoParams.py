@@ -13,6 +13,8 @@ from pathlib import Path
 import eoTileGrids as eoTG
 from datetime import datetime
 
+
+
 #############################################################################################################
 # Description: Define a default execution parameter dictionary. 
 # 
@@ -729,11 +731,16 @@ def form_time_windows(inParams):
 #
 #############################################################################################################
 def form_spatial_regions(inParams):
-  if not has_custom_region(inParams):   # There is no custom region, so use regular tile regions
+  '''  
+    inParams(Dictionary): A given dictionary containing all input parameters.
+  '''
+
+  if not has_custom_region(inParams):   # There is no custom region, so use regular tile regions    
     inParams['regions'] = {}
     for tile_name in inParams['tile_names']:
       if eoTG.valid_tile_name(tile_name):
         raw_polygon = eoTG.get_tile_polygon(tile_name)
+        print(f'<form_spatial_regions> Raw polygon = {raw_polygon}')
         inParams['regions'][tile_name] = eoTG.expandSquare(raw_polygon, 0.2)
         #inParams['regions'][tile_name] = eoTG.get_tile_polygon(tile_name)
     
