@@ -7,8 +7,7 @@ Handles all parameter processing and validation before calling Production.py mai
 This module orchestrates:
 1. Region loading from KML/SHP files
 2. Temporal window generation (4 modes)
-3. Date symmetry and ordering
-4. Polygon validation and filtering
+3. Polygon validation and filtering
 
 Usage:
     from prepare_params import prepare_production_params
@@ -331,37 +330,6 @@ def form_time_windows(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
     ProdParams['current_time'] = 0
     return ProdParams
 
-
-#############################################################################################################
-# DATE SYMMETRY
-#############################################################################################################
-
-def ensure_date_symmetry(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Ensure start_dates and end_dates are symmetric.
-    
-    If only one is provided, the other is set to match it.
-    
-    Args:
-        ProdParams: Production parameters dictionary
-        
-    Returns:
-        Updated ProdParams dictionary with symmetric dates
-    """
-    start_dates = ProdParams.get("start_dates")
-    end_dates = ProdParams.get("end_dates")
-
-    if start_dates is not None and end_dates is None:
-        ProdParams["end_dates"] = copy.deepcopy(start_dates)
-        print("<ensure_date_symmetry> end_dates set to match start_dates")
-
-    elif end_dates is not None and start_dates is None:
-        ProdParams["start_dates"] = copy.deepcopy(end_dates)
-        print("<ensure_date_symmetry> start_dates set to match end_dates")
-
-    return ProdParams
-
-
 #############################################################################################################
 # POLYGON VALIDATION
 #############################################################################################################
@@ -497,19 +465,15 @@ def prepare_production_params(
     print("="*80 + "\n")
     
     # Step 1: Handle file-based regions (KML/SHP)
-    print("Step 1/4: Loading regions from files...")
+    print("Step 1/3: Loading regions from files...")
     ProdParams = handle_regions_from_file(ProdParams)
     
     # Step 2: Generate temporal windows
-    print("\nStep 2/4: Generating temporal windows...")
+    print("\nStep 2/3: Generating temporal windows...")
     ProdParams = form_time_windows(ProdParams)
     
-    # Step 3: Ensure date symmetry
-    print("\nStep 3/4: Ensuring date symmetry...")
-    ProdParams = ensure_date_symmetry(ProdParams)
-    
-    # Step 4: Validate and filter polygons
-    print("\nStep 4/4: Validating polygons...")
+    # Step 3: Validate and filter polygons
+    print("\nStep 3/3: Validating polygons...")
     ProdParams, processing_log = validate_and_filter_polygons(ProdParams)
     
     if ProdParams is None:
@@ -532,92 +496,3 @@ def prepare_production_params(
         'CompParams': CompParams,
         'processing_log': processing_log
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-#############################################################################################################
-# EXAMPLE USAGE
-#############################################################################################################
-
-if __name__ == "__main__":
-    # Example: Test the preprocessing pipeline
-    import sys
-    
-    # Check if a KML file path was provided as command line argument
-    if len(sys.argv) > 1:
-        kml_file = sys.argv[1]
-    else:
-        # Default test path - adjust this to your actual KML file location
-        base_dir = Path(__file__).parent
-        kml_file = base_dir / "Sample Points" / "AfforestationSItesFixed.kml"
-    
-    # Convert to string and check if file exists
-    kml_file = str(kml_file)
-    if not os.path.exists(kml_file):
-        print(f"ERROR: KML file not found: {kml_file}")
-        print("\nUsage:")
-        print(f"  python {Path(__file__).name} <path_to_kml_file>")
-        print("\nExample:")
-        print(f"  python {Path(__file__).name} ./Sample\\ Points/AfforestationSItesFixed.kml")
-        sys.exit(1)
-    
-    print(f"Using KML file: {kml_file}")
-    
-    test_params = {
-        'sensor': 'HLS_SR',
-        'year': 2023,
-        'months': [6, 7],
-        'regions': kml_file,
-        'regions_start_index': 0,
-        'regions_end_index': 5,
-        'resolution': 30,
-        'projection': 'EPSG:3979',
-        'out_folder': './test_output'
-    }
-    
-    test_comp = {
-        'number_workers': 10,
-        'debug': True
-    }
-    
-    result = prepare_production_params(test_params, test_comp)
-    
-    if result:
-        print("\n✓ Preprocessing successful!")
-        print(f"Ready to call: main(ProdParams, CompParams)")
-        
-        # Print summary
-        print("\n" + "="*80)
-        print("VALIDATION RESULTS")
-        print("="*80)
-        print(f"Regions loaded: {len(result['ProdParams']['regions'])}")
-        print(f"Time windows: {len(result['ProdParams']['start_dates'])}")
-        print(f"Start dates: {result['ProdParams']['start_dates']}")
-        print(f"End dates: {result['ProdParams']['end_dates']}")
-        
-        # Show first few regions as examples
-        region_names = list(result['ProdParams']['regions'].keys())
-        print(f"\nRegion names: {region_names[:3]}...")
-        
-        # Show first region coordinates (first 3 points)
-        if result['ProdParams']['regions']:
-            first_region_name = region_names[0]
-            coords = result['ProdParams']['regions'][first_region_name]['coordinates'][0]
-            print(f"\nExample region '{first_region_name}' (first 3 coordinates):")
-            for i, coord in enumerate(coords[:3]):
-                print(f"  Point {i+1}: {coord}")
-        
-        print("="*80)
-    else:
-        print("\nPreprocessing failed!")
-        sys.exit(1)

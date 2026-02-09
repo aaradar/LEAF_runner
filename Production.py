@@ -144,42 +144,61 @@ def MosaicProduction(ProdParams, CompParams):
   else:
     region_names = list(usedParams['regions'].keys())
     
-    # NEW: Check for region-specific dates
+    # Check for region-specific dates
     has_region_dates = (
         'region_start_dates' in usedParams and 
         'region_end_dates' in usedParams and
         len(usedParams['region_start_dates']) > 0
     )
     
-    # NEW: Store default dates
+    # Store default dates
     default_start_dates = usedParams.get('start_dates', [])
     default_end_dates = usedParams.get('end_dates', [])
 
     for reg_name in region_names:
         usedParams = eoPM.set_spatial_region(usedParams, reg_name)
         
-        # NEW: Use region-specific dates if available
+        # Use region-specific dates if available and valid
         if has_region_dates and reg_name in usedParams['region_start_dates']:
-            # Use region-specific dates
+            # Get region-specific dates
             region_start_dates = usedParams['region_start_dates'][reg_name]
             region_end_dates = usedParams['region_end_dates'].get(reg_name, region_start_dates)
             
-            print(f'\n<MosaicProduction> Using region-specific dates for {reg_name}')
-            print(f'  Start dates: {region_start_dates}')
-            print(f'  End dates: {region_end_dates}')
+            # Check if any date is before 2016 (Sentinel-2 launch)
+            use_region_dates = True
+            for date in region_start_dates + region_end_dates:
+                if isinstance(date, str):
+                    date_year = int(date.split('-')[0])
+                else:
+                    date_year = date.year
+                
+                if date_year < 2016:
+                    print(f'\n<MosaicProduction> WARNING: Region {reg_name} has dates before 2016 (Sentinel-2 launch)')
+                    print(f'  Region dates: {region_start_dates} to {region_end_dates}')
+                    print(f'  Falling back to default dates')
+                    use_region_dates = False
+                    break
             
-            usedParams['start_dates'] = region_start_dates
-            usedParams['end_dates'] = region_end_dates
-            ProdParams['start_dates'] = region_start_dates
-            ProdParams['end_dates'] = region_end_dates
-            nTimes = 1
+            if use_region_dates:
+                # Use region-specific dates
+                print(f'\n<MosaicProduction> Using region-specific dates for {reg_name}')
+                print(f'  Start dates: {region_start_dates}')
+                print(f'  End dates: {region_end_dates}')
+                
+                usedParams['start_dates'] = region_start_dates
+                usedParams['end_dates'] = region_end_dates
+                nTimes = len(region_start_dates)
+            else:
+                # Use default dates
+                print(f'\n<MosaicProduction> Using default dates for {reg_name}')
+                usedParams['start_dates'] = default_start_dates
+                usedParams['end_dates'] = default_end_dates
+                nTimes = len(default_start_dates)
         else:
             # Use default dates
             print(f'\n<MosaicProduction> Using default dates for {reg_name}')
             usedParams['start_dates'] = default_start_dates
             usedParams['end_dates'] = default_end_dates
-            ProdParams['start_dates'] = default_start_dates
-            ProdParams['end_dates'] = default_end_dates
             nTimes = len(default_start_dates)
         
         for TIndex in range(nTimes):
@@ -191,6 +210,7 @@ def MosaicProduction(ProdParams, CompParams):
     # NEW: Restore default dates after processing
     usedParams['start_dates'] = default_start_dates
     usedParams['end_dates'] = default_end_dates
+
 
 #############################################################################################################
 # Description: This is the main function for generating composite images or vegetation biophysical parameter
