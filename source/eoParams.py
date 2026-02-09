@@ -51,7 +51,7 @@ all_param_keys = ['sensor', 'ID', 'unit', 'bands', 'year', 'nbYears', 'months', 
                   'out_location', 'resolution', 'GCS_bucket', 'out_folder', 'export_style', 'out_datatype', 'projection', 'CloudScore',
                   'monthly', 'start_dates', 'end_dates', 'regions', 'scene_ID', 'current_time', 'current_region', 
                   'time_str','cloud_cover', 'SsrData', 'Criteria', 'IncludeAngles', 'debug', 'entire_tile',
-                  'nodes', 'node_memory', 'number_workers', 'worker_threads', 'chunk_size', 'account', 'standardized']
+                  'nodes', 'node_memory', 'number_workers', 'worker_threads', 'chunk_size', 'account', 'standardized', 'region_start_dates', 'region_end_dates']
 
 
 

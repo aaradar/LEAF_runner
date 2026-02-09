@@ -228,6 +228,14 @@ def get_region_bbox(inRegion, out_epsg_code=''):
   if epsg_code == 'epsg:4326' or len(out_epsg_code) < 4:
     return [min(lons), min(lats), max(lons), max(lats)]
   elif epsg_code == 'epsg:3979':
+    # Check if coordinates are already in projected space (EPSG:3979)
+    # Projected coordinates are typically large numbers (e.g., 500000+, 4000000+)
+    # while lat/lon are in range [-180, 180] and [-90, 90]
+    # If lons are outside typical lat/lon range, assume they're already projected
+    if lons and max(abs(lon) for lon in lons) > 360:
+      # Coordinates are already in target projection, return as-is
+      return [min(lons), min(lats), max(lons), max(lats)]
+    
     nPts = len(lats)
     xs = []
     ys = []

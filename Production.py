@@ -19,7 +19,7 @@ if str(Path(__file__).parents[0]) not in sys.path:
 import source.eoMosaic as eoMz
 import source.eoParams as eoPM
 import source.eoTileGrids as eoTG
-import source.eoMosaicChatGPT as AIMz
+import source.eoMosaic as AIMz
 import source.LEAFProduction as leaf
 
 
@@ -142,34 +142,55 @@ def MosaicProduction(ProdParams, CompParams):
 
         all_base_tiles.append(tile_name)
   else:
-    region_names = usedParams['regions'].keys()    # A list of region names
-    nTimes       = len(usedParams['start_dates'])  # The number of time windows
+    region_names = list(usedParams['regions'].keys())
+    
+    # NEW: Check for region-specific dates
+    has_region_dates = (
+        'region_start_dates' in usedParams and 
+        'region_end_dates' in usedParams and
+        len(usedParams['region_start_dates']) > 0
+    )
+    
+    # NEW: Store default dates
+    default_start_dates = usedParams.get('start_dates', [])
+    default_end_dates = usedParams.get('end_dates', [])
 
     for reg_name in region_names:
-      # Loop through each spatial region
-      usedParams = eoPM.set_spatial_region(usedParams, reg_name)
-      
-      for TIndex in range(nTimes):
-        # Produce vegetation parameter porducts for each time window
-        usedParams = eoPM.set_current_time(usedParams, TIndex)
-
-        # Produce and export products in a specified way (a compact image or separate images)      
-        out_style = str(usedParams['export_style']).lower()
-        if out_style.find('comp') > -1:
-          print('\n<MosaicProduction> Generate and export mosaic images in one file .......')
-          #out_params = compact_params(mosaic, SsrData, ClassImg)
-
-          # Export the 64-bits image to either GD or GCS
-          #export_compact_params(fun_Param_dict, region, out_params, task_list)
-
-        else: 
-          # Produce and export vegetation parameetr maps for a time period and a region
-          print('\n<MosaicProduction> Generate and export separate mosaic images......')        
-          #AIMz.one_mosaicC(usedParams, CompParams)
-          eoMz.one_mosaic(usedParams, CompParams)
- 
-
-
+        usedParams = eoPM.set_spatial_region(usedParams, reg_name)
+        
+        # NEW: Use region-specific dates if available
+        if has_region_dates and reg_name in usedParams['region_start_dates']:
+            # Use region-specific dates
+            region_start_dates = usedParams['region_start_dates'][reg_name]
+            region_end_dates = usedParams['region_end_dates'].get(reg_name, region_start_dates)
+            
+            print(f'\n<MosaicProduction> Using region-specific dates for {reg_name}')
+            print(f'  Start dates: {region_start_dates}')
+            print(f'  End dates: {region_end_dates}')
+            
+            usedParams['start_dates'] = region_start_dates
+            usedParams['end_dates'] = region_end_dates
+            ProdParams['start_dates'] = region_start_dates
+            ProdParams['end_dates'] = region_end_dates
+            nTimes = 1
+        else:
+            # Use default dates
+            print(f'\n<MosaicProduction> Using default dates for {reg_name}')
+            usedParams['start_dates'] = default_start_dates
+            usedParams['end_dates'] = default_end_dates
+            ProdParams['start_dates'] = default_start_dates
+            ProdParams['end_dates'] = default_end_dates
+            nTimes = len(default_start_dates)
+        
+        for TIndex in range(nTimes):
+            usedParams = eoPM.set_current_time(usedParams, TIndex)
+            
+            # Process mosaic
+            eoMz.one_mosaic(usedParams, CompParams)
+    
+    # NEW: Restore default dates after processing
+    usedParams['start_dates'] = default_start_dates
+    usedParams['end_dates'] = default_end_dates
 
 #############################################################################################################
 # Description: This is the main function for generating composite images or vegetation biophysical parameter

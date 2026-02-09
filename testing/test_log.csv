@@ -1,0 +1,3 @@
+region_id,date,area_m2,will_process,status,skip_reason,timestamp
+region0,2025-08-31,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-02T14:46:02.293934
+region1,2025-08-31,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-02T14:46:02.293975

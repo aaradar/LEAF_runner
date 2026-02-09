@@ -1,0 +1,19 @@
+region_id,date,area_m2,will_process,status,skip_reason,timestamp
+region0,2023-06-30,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region0,2023-07-31,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region0,2023-08-31,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region1,2023-06-30,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region1,2023-07-31,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region1,2023-08-31,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region2,2023-06-30,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region2,2023-07-31,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region2,2023-08-31,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region3,2023-06-30,875.45,True,QUEUED,N/A,2026-02-05T11:18:47.684700
+region3,2023-07-31,875.45,True,QUEUED,N/A,2026-02-05T11:18:47.684700
+region3,2023-08-31,875.45,True,QUEUED,N/A,2026-02-05T11:18:47.684700
+region4,2023-06-30,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region4,2023-07-31,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region4,2023-08-31,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region5,2023-06-30,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region5,2023-07-31,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
+region5,2023-08-31,0.0,False,SKIPPED,"All coordinates identical (point, not polygon)",2026-02-05T11:18:47.684700
