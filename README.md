@@ -95,6 +95,7 @@ This README documents the new Parameter Preparation System added to the LEAF pro
 - Temporal buffer extraction from file attributes
 - Point-to-polygon conversion
 - Z-coordinate removal (3D → 2D)
+- Flexible ID handling (preserves string or integer IDs)
 
 ### 4. **Production.py** - Updated Main Production Script
 **Location:** `./Production.py`
@@ -255,7 +256,8 @@ parameter_preparation.ipynb
 - `ProdParams['regions_start_index']` - start position
 - `ProdParams['regions_end_index']` - end position
 - `ProdParams['spatial_buffer_m']` - spatial buffer in meters
-- `ProdParams['temporal_buffer']` - [days_before, days_after]
+- `ProdParams['temporal_buffer']` - [days_before, days_after] or [["date1", "date2"], ...]
+- `ProdParams['file_variables']` - [id_column, start_date_column, end_date_column]
 
 **Returns:** Updated ProdParams with regions dictionary
 
@@ -309,11 +311,23 @@ ProdParams = {
 ```
 
 **Temporal Buffer Application:**
-If `temporal_buffer` is specified, it's applied to all dates:
+If `temporal_buffer` is specified, it can work in two modes:
+
+**Offset Mode (apply days before/after):**
 ```python
 ProdParams['temporal_buffer'] = [-5, 5]  # [days_before, days_after]
 # '2023-06-01' becomes '2023-05-27' (start)
 # '2023-06-30' becomes '2023-07-05' (end)
+
+# Or multiple buffers to multiply windows:
+ProdParams['temporal_buffer'] = [[-5, 5], [-10, 10], [0, 15]]
+# Each original date pair expands to 3 windows
+```
+
+**Override Mode (replace all dates):**
+```python
+ProdParams['temporal_buffer'] = [["2024-04-15", "2024-07-15"], ["2024-08-01", "2024-09-01"]]
+# All regions get these exact 2 date windows, ignoring original dates
 ```
 
 ---
@@ -396,7 +410,7 @@ ProdParams['temporal_buffer'] = [-5, 5]  # [days_before, days_after]
 
 ### leaf_wrapper.py Functions
 
-#### `regions_from_kml(kml_file, start, end, prefix, spatial_buffer_m)`
+#### `regions_from_kml(kml_file, start, end, prefix, spatial_buffer_m, file_variables)`
 **Load KML/Shapefile and return polygon regions**
 
 **Parameters:**
@@ -405,6 +419,7 @@ ProdParams['temporal_buffer'] = [-5, 5]  # [days_before, days_after]
 - `end` - Ending position (0-based, inclusive, None = all)
 - `prefix` - Prefix for region names (default: "region")
 - `spatial_buffer_m` - Buffer size in meters (can be negative)
+- `file_variables` - List of [id_column, start_date_column, end_date_column]
 
 **Returns:** `(regions_dict, region_start_dates, region_end_dates)`
 
@@ -414,10 +429,24 @@ regions, starts, ends = regions_from_kml(
     'sites.kml',
     start=0,
     end=5,
-    spatial_buffer_m=-20  # Negative buffer = erosion
+    spatial_buffer_m=-20,  # Negative buffer = erosion
+    file_variables=['SiteID', 'AsssD_1', 'AsssD_2']  # Column names to use
 )
 # Returns regions 0-5 with 20m erosion applied
+# Region names will be: region20, region39, region45, etc. (using SiteID values)
 ```
+
+**ID Handling:**
+- IDs are preserved as-is from the file (string or integer)
+- If ID is a float like 20.0, it's converted to int: `region20`
+- If ID is an integer like 45, kept as int: `region45`
+- If ID is a string like "ID_10001", kept as string: `regionID_10001`
+- Regions are sorted numerically based on the numeric portion of the ID
+
+**Important:** Use the correct ID column for your file!
+- For KML with `SiteID`: `file_variables=['SiteID', 'AsssD_1', 'AsssD_2']`
+- For KML with `TARGET_FID`: `file_variables=['TARGET_FID', 'start_date', 'end_date']`
+- For SHP with custom ID: `file_variables=['MyID', 'date_start', 'date_end']`
 
 ---
 
@@ -425,7 +454,11 @@ regions, starts, ends = regions_from_kml(
 
 **Constructor:**
 ```python
-wrapper = LeafWrapper(polygon_file, spatial_buffer_m=None)
+wrapper = LeafWrapper(
+    polygon_file, 
+    spatial_buffer_m=None,
+    file_variables=['ID', 'start_date', 'end_date']
+)
 ```
 
 **Methods:**
@@ -448,9 +481,9 @@ Converts geometries to LEAF-compatible dictionary
 
 **Extracts:**
 - Region coordinates
-- `TARGET_FID`, `SiteID`, or `pointid` as region ID
-- `AsssD_1` as start_date
-- `AsssD_2` through `AsssD_7` as end_date (first non-null)
+- ID from column specified in `file_variables[0]`
+- Start date from column specified in `file_variables[1]`
+- End date from column specified in `file_variables[2]`
 
 **Returns:**
 ```python
@@ -458,8 +491,8 @@ Converts geometries to LEAF-compatible dictionary
     'region_id': {
         'r_id': region_id,
         'coordinates': [[[x1, y1], [x2, y2], ...]],
-        'start_date': 'YYYY-MM-DD',  # From AsssD_1
-        'end_date': 'YYYY-MM-DD'     # From AsssD_2-7
+        'start_date': 'YYYY-MM-DD',  # From file_variables[1]
+        'end_date': 'YYYY-MM-DD'     # From file_variables[2]
     }
 }
 ```
@@ -491,12 +524,11 @@ for reg_name in region_names:
         region_end_dates = usedParams['region_end_dates'].get(reg_name)
         usedParams['start_dates'] = region_start_dates
         usedParams['end_dates'] = region_end_dates
-        nTimes = 1
+        nTimes = len(region_start_dates)
     else:
-        # Use default dates
-        usedParams['start_dates'] = default_start_dates
-        usedParams['end_dates'] = default_end_dates
-        nTimes = len(default_start_dates)
+        # Skip regions without dates
+        print(f'WARNING: Region {reg_name} has no region-specific dates - SKIPPING')
+        continue
     
     for TIndex in range(nTimes):
         usedParams = eoPM.set_current_time(usedParams, TIndex)
@@ -507,7 +539,7 @@ for reg_name in region_names:
 
 ## Usage Examples
 
-### Example 1: Basic Usage
+### Example 1: Basic Usage with file_variables
 
 ```python
 from prepare_params import prepare_production_params
@@ -520,6 +552,7 @@ ProdParams = {
     'regions': './data/sites.kml',
     'regions_start_index': 0,
     'regions_end_index': 10,
+    'file_variables': ['SiteID', 'AsssD_1', 'AsssD_2'],  # IMPORTANT: Specify column names!
     'resolution': 30,
     'projection': 'EPSG:3979',
     'out_folder': './output'
@@ -537,42 +570,55 @@ if result:
 ```python
 ProdParams = {
     'sensor': 'S2_SR',
-    'year': 2023,
-    'months': [6, 7],
     'regions': './sites.kml',
+    'file_variables': ['SiteID', 'AsssD_1', 'AsssD_2'],
     'spatial_buffer_m': -20,        # 20m erosion
-    'temporal_buffer': [-7, 7],     # 7 days before/after
+    'temporal_buffer': [-7, 7],     # 7 days before/after each date
     'resolution': 30,
     'out_folder': './output'
 }
 ```
 
-### Example 3: Multi-Year Processing
+### Example 3: Multi-Year Processing with Region Dates
 
 ```python
 ProdParams = {
     'sensor': 'HLS_SR',
-    'year': 2020,
-    'months': [6, 7, 8],
-    'num_years': 3,                 # Process 2020-2022
     'regions': './sites.kml',
+    'file_variables': ['SiteID', 'AsssD_1', 'AsssD_2'],
+    'num_years': 3,                 # Expand dates across 2020-2022
     'resolution': 30,
     'out_folder': './output'
 }
-# Generates 9 mosaics: 2020-06/07/08, 2021-06/07/08, 2022-06/07/08
+# If KML has dates like 2020-06-01, will also generate 2021-06-01 and 2022-06-01
 ```
 
-### Example 4: Custom Date Ranges
+### Example 4: Multiple Temporal Buffers (Window Expansion)
 
 ```python
 ProdParams = {
     'sensor': 'HLS_SR',
-    'start_dates': ['2023-06-01', '2023-08-15'],
-    'end_dates': ['2023-06-30', '2023-09-15'],
     'regions': './sites.kml',
+    'file_variables': ['SiteID', 'AsssD_1', 'AsssD_2'],
+    'temporal_buffer': [[-5, 5], [-10, 10], [0, 15]],  # Multiply each date to 3 windows
     'resolution': 30,
     'out_folder': './output'
 }
+# Each region date expands to 3 windows with different buffers
+```
+
+### Example 5: Date Override Mode
+
+```python
+ProdParams = {
+    'sensor': 'HLS_SR',
+    'regions': './sites.kml',
+    'file_variables': ['SiteID', 'AsssD_1', 'AsssD_2'],
+    'temporal_buffer': [["2024-04-15", "2024-07-15"], ["2024-08-01", "2024-09-01"]],
+    'resolution': 30,
+    'out_folder': './output'
+}
+# All regions get these exact 2 date windows, ignoring dates from KML
 ```
 
 ---
@@ -585,8 +631,8 @@ After running `validate_and_filter_polygons()`, a CSV log is created:
 region_id,date,area_m2,will_process,status,skip_reason,timestamp
 region0,2023-06-30,0.00,False,SKIPPED,All coordinates identical (point not polygon),2025-02-09T10:30:00
 region1,2023-06-30,0.00,False,SKIPPED,Only 1 unique coordinate(s),2025-02-09T10:30:00
-region2,2023-06-30,12500000.00,True,QUEUED,Valid polygon,2025-02-09T10:30:00
-region3,2023-06-30,8750000.00,True,QUEUED,Valid polygon,2025-02-09T10:30:00
+region20,2023-06-30,12500000.00,True,QUEUED,Valid polygon,2025-02-09T10:30:00
+region39,2023-06-30,8750000.00,True,QUEUED,Valid polygon,2025-02-09T10:30:00
 ```
 
 **Console Output:**
@@ -632,6 +678,16 @@ Please provide a valid file path.
 """
 ```
 
+### Wrong Column Names
+
+```python
+# If file_variables specifies non-existent columns:
+# Region IDs will fall back to index (0, 1, 2, ...)
+# Dates will be None
+
+# SOLUTION: Check your KML/SHP file's column names first!
+```
+
 ### Invalid Date Range
 
 ```python
@@ -649,9 +705,15 @@ Please provide a valid file path.
 - Reduce negative buffer size
 - Verify KML/SHP file contains valid polygons
 
+**Wrong region IDs showing (e.g., region0, region1 instead of region20, region39)**
+- Check `file_variables` parameter - you're using the wrong ID column
+- Use `file_variables=['SiteID', ...]` not `['TARGET_FID', ...]`
+- TARGET_FID is just a row counter, not the actual site ID
+
 **Region-specific dates not working**
-- Ensure KML has `AsssD_1` (start date) attribute
-- Ensure KML has `AsssD_2` through `AsssD_7` (end date) attributes
+- Ensure KML has the start date column (e.g., `AsssD_1`)
+- Ensure KML has the end date column (e.g., `AsssD_2`)
+- Specify correct column names in `file_variables`
 - Check Sentinel-2 or Landsat has data for the specified dates
 - Dates must be in 'YYYY-MM-DD' format
 
@@ -659,10 +721,17 @@ Please provide a valid file path.
 - This is intentional when start_date > end_date
 - Check console output for swap messages
 
+**String IDs not working (getting numbers instead)**
+- This should now work correctly
+- IDs are preserved as-is from the file
+- Check that your ID column contains the values you expect
+
 ---
 
 ## Summary
 
-The Parameter Preparation System provides automated parameter processing, validation, and region loading for LEAF production. Key capabilities include flexible temporal modes, spatial/temporal buffering, polygon validation, and comprehensive error logging.
+The Parameter Preparation System provides automated parameter processing, validation, and region loading for LEAF production. Key capabilities include flexible temporal modes, spatial/temporal buffering, polygon validation, comprehensive error logging, and flexible ID handling that preserves both string and integer identifiers.
+
+**Key Takeaway:** Always specify `file_variables` correctly to match your KML/SHP file's column names!
 
 ---

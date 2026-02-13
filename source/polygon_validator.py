@@ -196,7 +196,6 @@ def create_processing_log(regions: Dict[str, Dict],
         for end_date in end_dates:
             log_entry = {
                 'region_id': region_id,
-                'date': end_date,
                 'area_m2': round(area, 2),
                 'will_process': not is_zero,
                 'status': 'SKIPPED' if is_zero else 'QUEUED',
@@ -255,7 +254,6 @@ def create_processing_log(regions: Dict[str, Dict],
 
 def update_processing_log(log_df: Any, 
                          region_id: str, 
-                         date: str, 
                          status: str,
                          output_file: str = None,
                          error_message: str = None) -> Any:

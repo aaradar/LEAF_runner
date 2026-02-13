@@ -39,6 +39,185 @@ except ImportError:
     PANDAS_AVAILABLE = False
 
 
+def validate_production_params(ProdParams: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    """
+    Validate all production parameters before processing.
+    
+    Performs comprehensive validation on:
+    - Region file paths and formats
+    - File variables list structure
+    - Index ranges
+    - Buffer parameters
+    - Temporal parameters
+    
+    Args:
+        ProdParams: Production parameters dictionary to validate
+        
+    Returns:
+        Tuple of (is_valid, error_messages)
+        - is_valid: Boolean indicating if all validations passed
+        - error_messages: List of validation error descriptions
+    """
+    errors = []
+    
+    # ============ VALIDATE REGIONS (FILE PATH) ============
+    regions = ProdParams.get('regions')
+    
+    if regions is None:
+        errors.append("Missing required parameter: 'regions'")
+    elif isinstance(regions, str):
+        # Check if it's a valid file path with .kml or .shp extension
+        regions_path = Path(regions)
+        
+        if not regions_path.suffix.lower() in ['.kml', '.shp']:
+            errors.append(
+                f"Invalid region file type: '{regions_path.suffix}'. "
+                f"Must be .kml or .shp file"
+            )
+        
+        if not regions_path.exists():
+            errors.append(f"Region file not found: '{regions}'")
+    elif not isinstance(regions, dict):
+        errors.append(
+            f"Invalid 'regions' type: {type(regions).__name__}. "
+            f"Must be file path (str) or region dictionary"
+        )
+    
+    # ============ VALIDATE FILE_VARIABLES ============
+    if 'file_variables' in ProdParams:
+        file_vars = ProdParams['file_variables']
+        
+        if not isinstance(file_vars, list):
+            errors.append(
+                f"Invalid 'file_variables' type: {type(file_vars).__name__}. "
+                f"Must be a list"
+            )
+        elif len(file_vars) != 3:
+            errors.append(
+                f"Invalid 'file_variables' length: {len(file_vars)}. "
+                f"Must contain exactly 3 elements [id, start_date, end_date]"
+            )
+        elif not all(isinstance(v, str) for v in file_vars):
+            errors.append(
+                f"Invalid 'file_variables' content. "
+                f"All elements must be strings (column names)"
+            )
+    
+    # ============ VALIDATE REGIONS_START_INDEX ============
+    start_idx = ProdParams.get('regions_start_index', 0)
+    
+    if not isinstance(start_idx, int):
+        errors.append(
+            f"Invalid 'regions_start_index' type: {type(start_idx).__name__}. "
+            f"Must be an integer"
+        )
+    elif start_idx < 0:
+        errors.append(
+            f"Invalid 'regions_start_index' value: {start_idx}. "
+            f"Must be 0 or greater"
+        )
+    
+    # ============ VALIDATE REGIONS_END_INDEX ============
+    end_idx = ProdParams.get('regions_end_index')
+    
+    if end_idx is not None:
+        if not isinstance(end_idx, int):
+            errors.append(
+                f"Invalid 'regions_end_index' type: {type(end_idx).__name__}. "
+                f"Must be an integer or None"
+            )
+        elif end_idx <= start_idx:
+            errors.append(
+                f"Invalid index range: regions_end_index ({end_idx}) must be "
+                f"greater than regions_start_index ({start_idx})"
+            )
+    
+    # ============ VALIDATE SPATIAL_BUFFER_M ============
+    if 'spatial_buffer_m' in ProdParams:
+        spatial_buffer = ProdParams['spatial_buffer_m']
+        
+        if not isinstance(spatial_buffer, (int, float)):
+            errors.append(
+                f"Invalid 'spatial_buffer_m' type: {type(spatial_buffer).__name__}. "
+                f"Must be a number (int or float)"
+            )
+    
+    # ============ VALIDATE TEMPORAL_BUFFER ============
+    if 'temporal_buffer' in ProdParams:
+        temporal_buffer = ProdParams['temporal_buffer']
+        
+        if not isinstance(temporal_buffer, list):
+            errors.append(
+                f"Invalid 'temporal_buffer' type: {type(temporal_buffer).__name__}. "
+                f"Must be a list"
+            )
+        else:
+            # Validate each buffer entry
+            for i, buffer_entry in enumerate(temporal_buffer):
+                if not isinstance(buffer_entry, (list, tuple)):
+                    errors.append(
+                        f"Invalid temporal_buffer[{i}]: {type(buffer_entry).__name__}. "
+                        f"Each entry must be a list or tuple"
+                    )
+                    continue
+                
+                if len(buffer_entry) != 2:
+                    errors.append(
+                        f"Invalid temporal_buffer[{i}] length: {len(buffer_entry)}. "
+                        f"Each entry must have exactly 2 elements"
+                    )
+                    continue
+                
+                # Check if it's integer buffer or date buffer
+                start_val, end_val = buffer_entry
+                
+                # Check if both are integers (day offsets)
+                if isinstance(start_val, int) and isinstance(end_val, int):
+                    continue  # Valid integer buffer
+                
+                # Check if both are date strings
+                elif isinstance(start_val, str) and isinstance(end_val, str):
+                    try:
+                        start_date = datetime.strptime(start_val, "%Y-%m-%d")
+                        end_date = datetime.strptime(end_val, "%Y-%m-%d")
+                        
+                        if end_date <= start_date:
+                            errors.append(
+                                f"Invalid temporal_buffer[{i}]: end date '{end_val}' "
+                                f"must be after start date '{start_val}'"
+                            )
+                    except ValueError as e:
+                        errors.append(
+                            f"Invalid temporal_buffer[{i}] date format: {e}. "
+                            f"Dates must be in YYYY-MM-DD format"
+                        )
+                else:
+                    errors.append(
+                        f"Invalid temporal_buffer[{i}]: mixed types. "
+                        f"Both elements must be integers (day offsets) OR "
+                        f"both must be date strings (YYYY-MM-DD)"
+                    )
+    
+    # ============ VALIDATE NUM_YEARS ============
+    if 'num_years' in ProdParams:
+        num_years = ProdParams['num_years']
+        
+        if not isinstance(num_years, int):
+            errors.append(
+                f"Invalid 'num_years' type: {type(num_years).__name__}. "
+                f"Must be an integer"
+            )
+        elif num_years < 1:
+            errors.append(
+                f"Invalid 'num_years' value: {num_years}. "
+                f"Must be 1 or greater"
+            )
+    
+    # Return validation results
+    is_valid = len(errors) == 0
+    return is_valid, errors
+
+
 #############################################################################################################
 # REGION HANDLING
 #############################################################################################################
@@ -75,38 +254,153 @@ def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
                 regions,
                 start=ProdParams.get("regions_start_index", 0),
                 end=ProdParams.get("regions_end_index", None),
-                spatial_buffer_m=ProdParams.get("spatial_buffer_m", None)
+                spatial_buffer_m=ProdParams.get("spatial_buffer_m", None),
+                file_variables=ProdParams.get("file_variables", None)
             )
             
-            # ==================== NEW CODE FOR TEMPORAL BUFFER STARTS HERE ====================
-            # Apply temporal buffer to region-specific dates if specified
+            # ==================== TEMPORAL BUFFER PROCESSING ====================
+
+            # STEP 1: Handle single date case FIRST (auto-generate missing dates)
+            all_regions = set(regions_dict.keys())
+
+            for region_name in all_regions:
+                has_start = region_name in region_start_dates and region_start_dates[region_name]
+                has_end = region_name in region_end_dates and region_end_dates[region_name]
+                
+                if has_start and not has_end:
+                    # Only start date exists - copy to end
+                    region_end_dates[region_name] = region_start_dates[region_name].copy()
+                    print(f"<handle_regions_from_file> Region {region_name}: Auto-generated end dates from start dates")
+                elif has_end and not has_start:
+                    # Only end date exists - copy to start
+                    region_start_dates[region_name] = region_end_dates[region_name].copy()
+                    print(f"<handle_regions_from_file> Region {region_name}: Auto-generated start dates from end dates")
+
+            # STEP 2: Apply temporal buffer (now that all regions have both start and end dates)
             if 'temporal_buffer' in ProdParams:
-                buffer_start = ProdParams['temporal_buffer'][0]
-                buffer_end = ProdParams['temporal_buffer'][1]
+                buffer_list = ProdParams['temporal_buffer']
                 
-                # Apply buffer to region start dates
-                if region_start_dates:
-                    buffered_start_dates = {}
-                    for region_name, date_list in region_start_dates.items():
-                        buffered_start_dates[region_name] = [
-                            apply_temporal_buffer_to_date(date, buffer_start) 
-                            for date in date_list
-                        ]
-                    region_start_dates = buffered_start_dates
-                    print(f"<handle_regions_from_file> Applied temporal buffer ({buffer_start} days) to region start dates")
+                # Determine if we're in override mode or offset mode
+                # Override mode: buffer_list contains pairs of date strings like [["2024-04-15", "2024-07-15"], ["2024-08-01", "2024-09-01"]]
+                # Offset mode: buffer_list contains pairs of day offsets like [[-5, 10], [-10, 15], [0, 30]]
                 
-                # Apply buffer to region end dates
-                if region_end_dates:
-                    buffered_end_dates = {}
-                    for region_name, date_list in region_end_dates.items():
-                        buffered_end_dates[region_name] = [
-                            apply_temporal_buffer_to_date(date, buffer_end) 
-                            for date in date_list
-                        ]
-                    region_end_dates = buffered_end_dates
-                    print(f"<handle_regions_from_file> Applied temporal buffer ({buffer_end} days) to region end dates")
-            # ==================== NEW CODE ENDS HERE ====================
-            
+                if buffer_list and len(buffer_list) > 0:
+                    # Check if first entry is a date string pair or numeric offset pair
+                    first_entry = buffer_list[0] if isinstance(buffer_list[0], list) else buffer_list
+                    is_override_mode = isinstance(first_entry[0], str)
+                    
+                    # Normalize to list of pairs format
+                    if not isinstance(buffer_list[0], list):
+                        # Single pair like [-5, 10] or ["2024-04-15", "2024-07-15"]
+                        buffer_list = [buffer_list]
+                    
+                    if is_override_mode:
+                        # OVERRIDE MODE: Replace all region dates with specified date pairs
+                        print(f"<handle_regions_from_file> Override mode: Setting all regions to {len(buffer_list)} date window(s)")
+                        
+                        new_start_dates = {}
+                        new_end_dates = {}
+                        
+                        for region_name in regions_dict.keys():
+                            new_start_dates[region_name] = [pair[0] for pair in buffer_list]
+                            new_end_dates[region_name] = [pair[1] for pair in buffer_list]
+                            print(f"<handle_regions_from_file> Region {region_name}: {len(buffer_list)} windows {buffer_list}")
+                        
+                        region_start_dates = new_start_dates
+                        region_end_dates = new_end_dates
+                    
+                    else:
+                        # OFFSET MODE: Apply each buffer pair to existing dates
+                        print(f"<handle_regions_from_file> Offset mode: Applying {len(buffer_list)} buffer(s) to multiply date windows")
+                        
+                        new_start_dates = {}
+                        new_end_dates = {}
+                        
+                        for region_name in regions_dict.keys():
+                            expanded_starts = []
+                            expanded_ends = []
+                            
+                            # Get original dates for this region
+                            orig_starts = region_start_dates.get(region_name, [])
+                            orig_ends = region_end_dates.get(region_name, [])
+                            
+                            # If no dates exist, skip this region
+                            if not orig_starts and not orig_ends:
+                                continue
+                            
+                            # For each original date pair
+                            for i in range(max(len(orig_starts), len(orig_ends))):
+                                orig_start = orig_starts[i] if i < len(orig_starts) else orig_ends[i]
+                                orig_end = orig_ends[i] if i < len(orig_ends) else orig_starts[i]
+                                
+                                # Apply each buffer to this date pair
+                                for buffer_start, buffer_end in buffer_list:
+                                    buffered_start = apply_temporal_buffer_to_date(orig_start, buffer_start)
+                                    buffered_end = apply_temporal_buffer_to_date(orig_end, buffer_end)
+                                    expanded_starts.append(buffered_start)
+                                    expanded_ends.append(buffered_end)
+                            
+                            new_start_dates[region_name] = expanded_starts
+                            new_end_dates[region_name] = expanded_ends
+                            print(f"<handle_regions_from_file> Region {region_name}: Expanded from {max(len(orig_starts), len(orig_ends))} to {len(expanded_starts)} windows")
+                        
+                        region_start_dates = new_start_dates
+                        region_end_dates = new_end_dates
+
+            # STEP 3: Expand region dates across multiple years if num_years is specified 
+            # (MOVED AFTER buffering so buffered dates get expanded across years)
+            if 'num_years' in ProdParams and ProdParams['num_years'] > 1:
+                num_years = ProdParams['num_years']
+                print(f"<handle_regions_from_file> Expanding region dates across {num_years} years...")
+                
+                expanded_start_dates = {}
+                expanded_end_dates = {}
+                
+                for region_name in all_regions:
+                    orig_starts = region_start_dates.get(region_name, [])
+                    orig_ends = region_end_dates.get(region_name, [])
+                    
+                    if not orig_starts or not orig_ends:
+                        continue
+                    
+                    multi_year_starts = []
+                    multi_year_ends = []
+                    
+                    # For each original date pair (now potentially buffered)
+                    for orig_start, orig_end in zip(orig_starts, orig_ends):
+                        # Parse the dates
+                        start_dt = datetime.strptime(orig_start, '%Y-%m-%d')
+                        end_dt = datetime.strptime(orig_end, '%Y-%m-%d')
+                        
+                        # Generate dates for each year
+                        for year_offset in range(num_years):
+                            # Add years, handling leap year edge case
+                            try:
+                                new_start = start_dt.replace(year=start_dt.year + year_offset)
+                                new_end = end_dt.replace(year=end_dt.year + year_offset)
+                            except ValueError:
+                                # Handle Feb 29 in non-leap years → move to Feb 28
+                                if start_dt.month == 2 and start_dt.day == 29:
+                                    new_start = start_dt.replace(year=start_dt.year + year_offset, day=28)
+                                else:
+                                    new_start = start_dt.replace(year=start_dt.year + year_offset)
+                                
+                                if end_dt.month == 2 and end_dt.day == 29:
+                                    new_end = end_dt.replace(year=end_dt.year + year_offset, day=28)
+                                else:
+                                    new_end = end_dt.replace(year=end_dt.year + year_offset)
+                            
+                            multi_year_starts.append(new_start.strftime('%Y-%m-%d'))
+                            multi_year_ends.append(new_end.strftime('%Y-%m-%d'))
+                    
+                    expanded_start_dates[region_name] = multi_year_starts
+                    expanded_end_dates[region_name] = multi_year_ends
+                    print(f"<handle_regions_from_file> Region {region_name}: Expanded from {len(orig_starts)} to {len(multi_year_starts)} date windows ({num_years} years)")
+                
+                region_start_dates = expanded_start_dates
+                region_end_dates = expanded_end_dates
+
+            # ==================== END TEMPORAL BUFFER PROCESSING ====================
             ProdParams["regions"] = regions_dict
             ProdParams["region_start_dates"] = region_start_dates
             ProdParams["region_end_dates"] = region_end_dates
@@ -133,7 +427,7 @@ def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
 
 
 #############################################################################################################
-# TEMPORAL WINDOW GENERATION (4 MODES)
+# TEMPORAL WINDOW GENERATION HELPER
 #############################################################################################################
 
 def apply_temporal_buffer_to_date(date_str: Any, buffer_days: int) -> Any:
@@ -243,18 +537,27 @@ def form_time_windows(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
                 # Loop through each month for this year
                 for month in ProdParams['months']:
                     start, end = month_range(current_year, month)
-                    
-                    # Apply temporal buffer if specified
-                    if 'temporal_buffer' in ProdParams:
-                        buffer_start = ProdParams['temporal_buffer'][0]
-                        buffer_end = ProdParams['temporal_buffer'][1]
-                        start = apply_temporal_buffer_to_date(start, buffer_start)
-                        end = apply_temporal_buffer_to_date(end, buffer_end)
-                    
                     ProdParams['start_dates'].append(start)
                     ProdParams['end_dates'].append(end)
             
-            print(f"<form_time_windows> Generated {len(ProdParams['start_dates'])} time windows")
+            # Apply temporal buffer if specified (only for numeric offsets, not date overrides)
+            if 'temporal_buffer' in ProdParams:
+                buffer_list = ProdParams['temporal_buffer']
+                # Normalize to list of pairs
+                if not isinstance(buffer_list[0], list):
+                    buffer_list = [buffer_list]
+                
+                # Check if it's numeric offset mode (not date override mode)
+                first_entry = buffer_list[0]
+                if isinstance(first_entry[0], int):
+                    # Only apply buffer if we have a single numeric offset pair
+                    if len(buffer_list) == 1:
+                        buffer_start, buffer_end = buffer_list[0]
+                        ProdParams['start_dates'] = [apply_temporal_buffer_to_date(d, buffer_start) for d in ProdParams['start_dates']]
+                        ProdParams['end_dates'] = [apply_temporal_buffer_to_date(d, buffer_end) for d in ProdParams['end_dates']]
+                        print(f"<form_time_windows> Applied temporal buffer: [{buffer_start}, {buffer_end}] days")
+                    else:
+                        print(f"<form_time_windows> Warning: Multiple buffers ignored for global time windows (use region dates instead)")
         
         else:
             # MODE 1: Single year, multiple months
@@ -267,16 +570,27 @@ def form_time_windows(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
             
             for month in ProdParams['months']:
                 start, end = month_range(year, month)
-                
-                # Apply temporal buffer if specified
-                if 'temporal_buffer' in ProdParams:
-                    buffer_start = ProdParams['temporal_buffer'][0]
-                    buffer_end = ProdParams['temporal_buffer'][1]
-                    start = apply_temporal_buffer_to_date(start, buffer_start)
-                    end = apply_temporal_buffer_to_date(end, buffer_end)
-                
                 ProdParams['start_dates'].append(start)
                 ProdParams['end_dates'].append(end)
+            
+            # Apply temporal buffer if specified (only for numeric offsets, not date overrides)
+            if 'temporal_buffer' in ProdParams:
+                buffer_list = ProdParams['temporal_buffer']
+                # Normalize to list of pairs
+                if not isinstance(buffer_list[0], list):
+                    buffer_list = [buffer_list]
+                
+                # Check if it's numeric offset mode (not date override mode)
+                first_entry = buffer_list[0]
+                if isinstance(first_entry[0], int):
+                    # Only apply buffer if we have a single numeric offset pair
+                    if len(buffer_list) == 1:
+                        buffer_start, buffer_end = buffer_list[0]
+                        ProdParams['start_dates'] = [apply_temporal_buffer_to_date(d, buffer_start) for d in ProdParams['start_dates']]
+                        ProdParams['end_dates'] = [apply_temporal_buffer_to_date(d, buffer_end) for d in ProdParams['end_dates']]
+                        print(f"<form_time_windows> Applied temporal buffer: [{buffer_start}, {buffer_end}] days")
+                    else:
+                        print(f"<form_time_windows> Warning: Multiple buffers ignored for global time windows (use region dates instead)")
             
             print(f"<form_time_windows> Generated {len(ProdParams['start_dates'])} time windows")
     
@@ -308,11 +622,22 @@ def form_time_windows(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
         
         # Apply temporal buffer to custom windows if needed
         if 'temporal_buffer' in ProdParams and 'start_dates' in ProdParams and 'end_dates' in ProdParams:
-            buffer_start = ProdParams['temporal_buffer'][0]
-            buffer_end = ProdParams['temporal_buffer'][1]
-            ProdParams['start_dates'] = [apply_temporal_buffer_to_date(d, buffer_start) for d in ProdParams['start_dates']]
-            ProdParams['end_dates'] = [apply_temporal_buffer_to_date(d, buffer_end) for d in ProdParams['end_dates']]
-            print(f"<form_time_windows> Applied temporal buffer: [{buffer_start}, {buffer_end}] days")
+            buffer_list = ProdParams['temporal_buffer']
+            # Normalize to list of pairs
+            if not isinstance(buffer_list[0], list):
+                buffer_list = [buffer_list]
+            
+            # Check if it's numeric offset mode (not date override mode)
+            first_entry = buffer_list[0]
+            if isinstance(first_entry[0], int):
+                # Only apply buffer if we have a single numeric offset pair
+                if len(buffer_list) == 1:
+                    buffer_start, buffer_end = buffer_list[0]
+                    ProdParams['start_dates'] = [apply_temporal_buffer_to_date(d, buffer_start) for d in ProdParams['start_dates']]
+                    ProdParams['end_dates'] = [apply_temporal_buffer_to_date(d, buffer_end) for d in ProdParams['end_dates']]
+                    print(f"<form_time_windows> Applied temporal buffer: [{buffer_start}, {buffer_end}] days")
+                else:
+                    print(f"<form_time_windows> Warning: Multiple buffers ignored for global time windows (use region dates instead)")
         
         # Ensure start_date is always before end_date (swap if needed)
         if 'start_dates' in ProdParams and 'end_dates' in ProdParams:
@@ -330,6 +655,55 @@ def form_time_windows(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
     ProdParams['current_time'] = 0
     return ProdParams
 
+def apply_global_dates_to_regions(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Apply global start_dates and end_dates to regions that have empty date values.
+    
+    This ensures that regions loaded from files without date attributes can still
+    use the global temporal windows defined in ProdParams.
+    
+    Args:
+        ProdParams: Production parameters dictionary
+        
+    Returns:
+        Updated ProdParams with global dates applied to empty region dates
+    """
+    # Check if we have global dates and regions
+    if 'start_dates' not in ProdParams or 'end_dates' not in ProdParams:
+        return ProdParams
+    
+    if 'regions' not in ProdParams or not isinstance(ProdParams['regions'], dict):
+        return ProdParams
+    
+    global_starts = ProdParams['start_dates']
+    global_ends = ProdParams['end_dates']
+    
+    # Initialize region date dictionaries if they don't exist
+    if 'region_start_dates' not in ProdParams:
+        ProdParams['region_start_dates'] = {}
+    if 'region_end_dates' not in ProdParams:
+        ProdParams['region_end_dates'] = {}
+    
+    region_start_dates = ProdParams['region_start_dates']
+    region_end_dates = ProdParams['region_end_dates']
+    
+    # Apply global dates to regions with empty dates
+    regions_updated = 0
+    for region_name in ProdParams['regions'].keys():
+        has_start = region_name in region_start_dates and region_start_dates[region_name]
+        has_end = region_name in region_end_dates and region_end_dates[region_name]
+        
+        # If region has no dates at all, apply global dates
+        if not has_start and not has_end:
+            region_start_dates[region_name] = global_starts.copy()
+            region_end_dates[region_name] = global_ends.copy()
+            regions_updated += 1
+            print(f"<apply_global_dates_to_regions> Region '{region_name}': Applied {len(global_starts)} global time windows")
+    
+    if regions_updated > 0:
+        print(f"<apply_global_dates_to_regions> Updated {regions_updated} region(s) with global time windows")
+    
+    return ProdParams
 #############################################################################################################
 # POLYGON VALIDATION
 #############################################################################################################
@@ -443,6 +817,7 @@ def prepare_production_params(
     Orchestrate all parameter preparation steps before production.
     
     This is the main entry point that runs all preprocessing:
+    0. Validate input parameters
     1. Load regions from KML/SHP files (if applicable)
     2. Generate temporal windows (4 modes supported)
     3. Ensure date symmetry
@@ -461,19 +836,50 @@ def prepare_production_params(
         }
     """
     print("\n" + "="*80)
-    print("PARAMETER PREPARATION PIPELINE")
+    print("PARAMETER PREPARATION")
     print("="*80 + "\n")
     
+    # Step 0: Validate parameters
+    print("Step 1/4: Validating input parameters...")
+    is_valid, errors = validate_production_params(ProdParams)
+    
+    if not is_valid:
+        print("\n" + "="*80)
+        print("PARAMETER VALIDATION FAILED")
+        print("="*80)
+        print(f"\nFound {len(errors)} validation error(s):\n")
+        for i, error in enumerate(errors, 1):
+            print(f"  {i}. {error}")
+        print("\n" + "="*80)
+        print("Please fix the above errors and try again.")
+        print("="*80 + "\n")
+        return None
+    
+    print("✓ All parameters valid")
+    
     # Step 1: Handle file-based regions (KML/SHP)
-    print("Step 1/3: Loading regions from files...")
+    print("\nStep 2/4: Loading regions from files...")
     ProdParams = handle_regions_from_file(ProdParams)
     
-    # Step 2: Generate temporal windows
-    print("\nStep 2/3: Generating temporal windows...")
-    ProdParams = form_time_windows(ProdParams)
+    ## Step 2: Generate temporal windows (only if temporal parameters exist)
+    # Check if any temporal parameters are present
+    has_year_months = 'year' in ProdParams and 'months' in ProdParams
+    has_custom_dates = has_custom_window(ProdParams)
+    has_standardized = 'standardized' in ProdParams
+    
+    if has_year_months or has_custom_dates or has_standardized:
+        print("\nStep 3/4: Generating temporal windows...")
+        ProdParams = form_time_windows(ProdParams)
+        
+        # Step 2.5: Apply global dates to regions with empty dates
+        if 'regions' in ProdParams and isinstance(ProdParams['regions'], dict):
+            ProdParams = apply_global_dates_to_regions(ProdParams)
+    else:
+        print("\nStep 3/4: Skipping temporal window generation (no year/months or start_dates/end_dates found)")
+        print("           Region-specific dates from file will be used if available.")
     
     # Step 3: Validate and filter polygons
-    print("\nStep 3/3: Validating polygons...")
+    print("\nStep 4/4: Validating polygons...")
     ProdParams, processing_log = validate_and_filter_polygons(ProdParams)
     
     if ProdParams is None:
@@ -487,8 +893,8 @@ def prepare_production_params(
     print("PARAMETER PREPARATION COMPLETE")
     print("="*80)
     print(f"Regions: {len(ProdParams.get('regions', {}))}")
-    print(f"Time windows: {len(ProdParams.get('start_dates', []))}")
-    print(f"Total tasks: {len(ProdParams.get('regions', {})) * len(ProdParams.get('start_dates', []))}")
+    print(f"Start Time windows: {ProdParams.get('region_start_dates', [])}")
+    print(f"End Time windows: {ProdParams.get('region_end_dates', [])}")
     print("="*80 + "\n")
     
     return {

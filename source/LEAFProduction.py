@@ -49,7 +49,7 @@ def create_LEAF_maps(ProdParams, CompParams):
   prod_names = ProdParams['prod_names']
   #print(f'\n<create_LEAF_maps> all parameters for generating mosaic: {ProdParams}')
 
-  mosaic = eoMz.one_mosaic(ProdParams, CompParams, False)
+  mosaic = eoMz.one_mosaic(ProdParams, CompParams)  # ← REMOVED the third argument
   print('\n<create_LEAF_maps> The bands in mosaic image:', mosaic.data_vars)
   # print('\n<create_LEAF_maps> ext_tiffs_rec = ', ext_tiffs_rec)
   # print('\n<create_LEAF_maps> period_str = ', period_str)
@@ -93,7 +93,6 @@ def create_LEAF_maps(ProdParams, CompParams):
   print(f'\n\n<<< The elapsed time for generating one monthly tile product = {leaf_time} minutes>>>')
 
   return out_VP_maps
-
 
 
 
@@ -322,14 +321,55 @@ def LEAF_production(ProdParams, CompParams):
   #==========================================================================================================
   # Produce vegetation biophysical parameter maps for each region and time window
   #==========================================================================================================
-  region_names = usedParams['regions'].keys()    # Get a list of region names
-  nTimes       = len(usedParams['start_dates'])  # Get the number of time windows
+  region_names = list(usedParams['regions'].keys())    # Get a list of region names
+  
+  # Check for region-specific dates
+  has_region_dates = (
+      'region_start_dates' in usedParams and 
+      'region_end_dates' in usedParams and
+      len(usedParams['region_start_dates']) > 0
+  )
+  
+  # Store default dates (if they exist)
+  default_start_dates = usedParams.get('start_dates', [])
+  default_end_dates = usedParams.get('end_dates', [])
 
   for reg_name in region_names:                                 # Loop through each spatial region
     usedParams = eoPM.set_spatial_region(usedParams, reg_name)  # Specify a current spatial region
     
+    # Check if region has region-specific dates
+    if has_region_dates and reg_name in usedParams['region_start_dates']:
+      # Get region-specific dates
+      region_start_dates = usedParams['region_start_dates'][reg_name]
+      region_end_dates = usedParams['region_end_dates'].get(reg_name, region_start_dates)
+      
+      # Use region-specific dates
+      print(f'\n<LEAF_production> Using region-specific dates for {reg_name}')
+      print(f'  Start dates: {region_start_dates}')
+      print(f'  End dates: {region_end_dates}')
+      
+      usedParams['start_dates'] = region_start_dates
+      usedParams['end_dates'] = region_end_dates
+      nTimes = len(region_start_dates)
+      
+    elif default_start_dates and default_end_dates:
+      # Use default/global dates
+      print(f'\n<LEAF_production> Using global dates for {reg_name}')
+      usedParams['start_dates'] = default_start_dates
+      usedParams['end_dates'] = default_end_dates
+      nTimes = len(default_start_dates)
+      
+    else:
+      # No dates found - skip this region
+      print(f'\n<LEAF_production> WARNING: Region {reg_name} has no dates (neither region-specific nor global)')
+      print(f'  SKIPPING this region')
+      continue
+    
+    # Process all time windows for this region
     for TIndex in range(nTimes):                              # Loop through each time window
-      usedParams = eoPM.set_current_time(usedParams, TIndex)  # Specify a current spatial region
+      # Set monthly flag based on whether we're using region dates
+      usedParams['monthly'] = False  # Region-specific dates are not monthly
+      usedParams = eoPM.set_current_time(usedParams, TIndex)  # Specify a current time window
 
       # Produce and export products in a specified way (a compact image or separate images)      
       out_style = str(usedParams['export_style']).lower()
@@ -342,10 +382,13 @@ def LEAF_production(ProdParams, CompParams):
 
       else: 
         # Produce and export vegetation biophysical parameetr maps for a time period and a spatial region
-        print('\n<tile_LEAF_production> Generate and export separate vegetation biophysical maps......')        
+        print('\n<LEAF_production> Generate and export separate vegetation biophysical maps......')        
         VBP_maps = create_LEAF_maps(usedParams, CompParams)
       
         # Export results for ONE region and ONE time window
-        export_VegParamMaps(usedParams, VBP_maps)   
-
+        export_VegParamMaps(usedParams, VBP_maps)
   
+  # Restore default dates after processing all regions
+  if default_start_dates and default_end_dates:
+    usedParams['start_dates'] = default_start_dates
+    usedParams['end_dates'] = default_end_dates
