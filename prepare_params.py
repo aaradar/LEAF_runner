@@ -97,12 +97,16 @@ def validate_production_params(ProdParams: Dict[str, Any]) -> Tuple[bool, List[s
                 f"Invalid 'file_variables' length: {len(file_vars)}. "
                 f"Must contain exactly 3 elements [id, start_date, end_date]"
             )
-        elif not all(isinstance(v, str) for v in file_vars):
+        elif not all(isinstance(v, (str, type(None))) for v in file_vars):
             errors.append(
                 f"Invalid 'file_variables' content. "
-                f"All elements must be strings (column names)"
+                f"All elements must be strings (column names) or None"
             )
-    
+        elif file_vars[0] is None:
+            errors.append(
+                f"Invalid 'file_variables': First element (id column) cannot be None. "
+                f"Date columns (elements 2 and 3) can be None."
+            )
     # ============ VALIDATE REGIONS_START_INDEX ============
     start_idx = ProdParams.get('regions_start_index', 0)
     

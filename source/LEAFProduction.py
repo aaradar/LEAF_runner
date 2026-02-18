@@ -72,8 +72,8 @@ def create_LEAF_maps(ProdParams, CompParams):
   # (1) Read and clip land cover map based on the spatial extent of "entire_map"
   # (2) Create a network ID map with the same spatial dimensions as clipped landcover map
   #==========================================================================================================  
-  #sub_LC_map = eoAD.get_local_CanLC('F:\\Canada_LC2020\\Canada_LC_2020_30m.tif', entire_map) # for workstation at Observatory
-  sub_LC_map = eoAD.get_local_CanLC('C:\\Work_Data\\Canada_LC_maps\\Canada_LC_2020_30m.tif', mosaic) # for work laptop
+  sub_LC_map = eoAD.get_local_CanLC('F:\\Canada_LC_maps\\Canada_LC_2020_30m.tif', mosaic) # for workstation at Observatory
+  #sub_LC_map = eoAD.get_local_CanLC('C:\\Work_Data\\Canada_LC_maps\\Canada_LC_2020_30m.tif', mosaic) # for work laptop
   SsrData    = eoIM.SSR_META_DICT[str(ProdParams['sensor']).upper()]
 
   DS_Options = SL2P_V1.make_DS_options('sl2p_nets', SsrData)  

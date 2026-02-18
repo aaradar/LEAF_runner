@@ -36,15 +36,20 @@ def regions_from_kml(kml_file, start=14, end=14, prefix="region", spatial_buffer
         Buffer size in meters to apply to geometries
     file_variables : list or None
         [id_column, start_date_column, end_date_column] from KML/SHP attributes
+        Use None for date columns if they don't exist: ['TARGET_FID', None, None]
 
     Returns:
-    dict
+    tuple
+        (regions_dict, region_start_dates, region_end_dates)
         Regions keyed as "{prefix}{file_id}". Example: {'region20': {...}, 'region39': {...}, 'region45': {...}}
-        # Returns: tuple (regions_dict, region_start_dates, region_end_dates)
+        
     Example:
         # File has 10 regions with IDs 20, 39, 45, 47, 52, 53, 57, 61, ...
-        regions = regions_from_kml('file.kml', start=1, end=5)
-        # Returns: {'region39': {...}, 'region45': {...}, 'region47': {...}, 'region52': {...}, 'region53': {...}}
+        regions, start_dates, end_dates = regions_from_kml('file.kml', start=1, end=5, 
+                                                            file_variables=['TARGET_FID', None, None])
+        # Returns: ({'region39': {...}, 'region45': {...}, ...}, 
+        #           {'region39': [], 'region45': [], ...},
+        #           {'region39': [], 'region45': [], ...})
     """
     if start < 0 or (end is not None and end < start):
         raise ValueError("Invalid start or end values. 'start' must be >= 0 and 'end' must be >= 'start'.")
@@ -65,8 +70,8 @@ def regions_from_kml(kml_file, start=14, end=14, prefix="region", spatial_buffer
         raise ValueError(f"No regions found in range [{start}:{end+1}]. File has {len(sorted_keys)} regions.")
 
     out = {}
-    region_start_dates = {}  # NEW
-    region_end_dates = {}    # NEW
+    region_start_dates = {}
+    region_end_dates = {}
     
     for key in selected_keys:
         region_data = regions_dict[key]
@@ -82,20 +87,20 @@ def regions_from_kml(kml_file, start=14, end=14, prefix="region", spatial_buffer
             "coordinates": coords,
         }
         
-        # NEW: Extract dates
+        # Extract dates - creates empty list if None
         start_date = region_data.get("start_date")
         if start_date:
             region_start_dates[region_name] = [start_date]
         else:
-            region_start_dates[region_name] = []  # or [] if you prefer empty list for missing dates
+            region_start_dates[region_name] = []
         
         end_date = region_data.get("end_date")
         if end_date:
             region_end_dates[region_name] = [end_date]
         else:
-            region_end_dates[region_name] = []  # or [] if you prefer empty list for missing dates
+            region_end_dates[region_name] = []
     
-    return out, region_start_dates, region_end_dates  # Returns tuple of (regions_dict, start_dates_dict, end_dates_dict)
+    return out, region_start_dates, region_end_dates
 
 
 #############################################################################################################
@@ -117,7 +122,7 @@ def regions_from_kml(kml_file, start=14, end=14, prefix="region", spatial_buffer
 #############################################################################################################
 
 class LeafWrapper:
-    def __init__(self, polygon_file, spatial_buffer_m=None, file_variables=['ID', 'start_date', 'end_date']):
+    def __init__(self, polygon_file, spatial_buffer_m=None, file_variables=['ID', None, None]):
         self.polygon_file = Path(polygon_file)
         self.gdf = None
         self.spatial_buffer_m = spatial_buffer_m
@@ -217,7 +222,7 @@ class LeafWrapper:
         --------
         regions : dict
             Dictionary mapping region IDs to GeoJSON-like Polygon data:
-            Example: {'region20': {"r_id": 20, "coordinates": [[...]]}, ...}
+            Example: {'region20': {"r_id": 20, "coordinates": [[...]], "start_date": "2024-01-01", "end_date": "2024-12-31"}, ...}
 
         Raises:
         -------
@@ -318,28 +323,28 @@ class LeafWrapper:
                 print(f"Warning: Skipping geometry {key} - type {geom.geom_type} could not be converted to polygon")
                 continue
             
-            # Extract date fields (only if columns exist)
-            # Extract date fields (only if columns exist)
+            # Extract date fields (only if columns exist and are not None)
             start_date = None
             end_date = None
-            if start_col and start_col in gdf_geo.columns:
+            
+            if start_col is not None and start_col in gdf_geo.columns:
                 start_date = row.get(start_col)
                 # Convert Timestamp to string if needed
-                if hasattr(start_date, 'strftime'):
+                if start_date is not None and hasattr(start_date, 'strftime'):
                     start_date = start_date.strftime('%Y-%m-%d')
                 
-            if end_col and end_col in gdf_geo.columns:
+            if end_col is not None and end_col in gdf_geo.columns:
                 end_date = row.get(end_col)
                 # Convert Timestamp to string if needed
-                if hasattr(end_date, 'strftime'):
+                if end_date is not None and hasattr(end_date, 'strftime'):
                     end_date = end_date.strftime('%Y-%m-%d')
             
             # Package region data
             regions[key] = {
                 "r_id": key,
                 "coordinates": coords[0],
-                "start_date": start_date,  # NEW
-                "end_date": end_date        # NEW
+                "start_date": start_date,
+                "end_date": end_date
             }
 
         return regions

@@ -51,12 +51,15 @@ This README documents the new Parameter Preparation System added to the LEAF pro
 - `Sample Points/AfforestationSItesFixed.kml` — Example KML file with afforestation polygons
 - `Sample Points/FieldPoints32_2018.shp` — Example Shapefile with point geometries
 - `Sample Points/GTA.kml` — kml created from with GE
+- `Sample Points/ColdwaterBCregion.kml` — kml created from with GE
+- `TMX/TML_pipeline_100mbuffer.kml` — kml created from with GE
 - `Sample Points/ShapeTest.py` — kml/shp to csv testing
 - `testing/test_leaf_wrapper.py` — Output validation tests for both KML and SHP
 - `testing/test_negative_buffer.py` — Output validation tests for buffers and polygon integrity
 
 **Updated Files:**
 - `Production.py` — kml date handling
+- `LEAFProduction` — kml runs with region dates now. Bug fixing
 - `requirements.txt` — Two-step GeoPandas installation
 
 ---
