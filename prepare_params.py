@@ -130,7 +130,7 @@ def validate_production_params(ProdParams: Dict[str, Any]) -> Tuple[bool, List[s
                 f"Invalid 'regions_end_index' type: {type(end_idx).__name__}. "
                 f"Must be an integer or None"
             )
-        elif end_idx <= start_idx:
+        elif end_idx < start_idx:
             errors.append(
                 f"Invalid index range: regions_end_index ({end_idx}) must be "
                 f"greater than regions_start_index ({start_idx})"
