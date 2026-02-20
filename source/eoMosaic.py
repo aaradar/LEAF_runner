@@ -1222,11 +1222,9 @@ def get_granule_mosaic(Input_tuple):
     #When in debugging mode, display metadata assets
     # if MosaicParams["debug"]:
     #   display_meta_assets(filtered_items['S2'], False)   
-    if Scale > 10:
-      xrDS_S2 = load_STAC_items(filtered_items['S2'], Bands, ChunkDict, ProjStr, Scale)  
-    else:
-      Bands_20m = [band for band in Bands if band not in ['blue', 'green', 'red', 'nir08']]
-      xrDS_S2   = load_STAC_10m_items(filtered_items['S2'], Bands_20m, ChunkDict, ProjStr) 
+    # Always use load_STAC_items with the requested resolution to ensure all bands are loaded
+    # in the same coordinate system. Let odc.stac.load() handle the resampling automatically.
+    xrDS_S2 = load_STAC_items(filtered_items['S2'], Bands, ChunkDict, ProjStr, Scale)  
 
     xrDS_LS = None  
   else:  #For both Snetinel-2 and Landsat data from LP DAAC of NASA
@@ -1622,6 +1620,7 @@ def one_mosaic(AllParams, Output=True):
   # Mask out the pixels with negative date value
   #========================================================================================================== 
   mosaic = base_img.where(base_img[eoIM.pix_date] > 0) 
+  print('\n<one_mosaic> Final mosaic bands:', list(mosaic.data_vars))
 
   #==========================================================================================================
   # Output resultant mosaic as required

@@ -262,6 +262,22 @@ def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
                 file_variables=ProdParams.get("file_variables", None)
             )
             
+            # ==================== HANDLE EMPTY REGIONS CASE ====================
+            if not regions_dict:
+                print(f"\n{'='*80}")
+                print("  WARNING: No valid regions loaded from file")
+                print('='*80)
+                print("This typically occurs when negative buffer operations collapse all geometries.")
+                print("The processing pipeline will continue with an empty region set.")
+                print(f"{'='*80}\n")
+                
+                # Set empty region parameters and continue
+                ProdParams["regions"] = {}
+                ProdParams["region_start_dates"] = {}
+                ProdParams["region_end_dates"] = {}
+                
+                return ProdParams
+            
             # ==================== TEMPORAL BUFFER PROCESSING ====================
 
             # STEP 1: Handle single date case FIRST (auto-generate missing dates)
@@ -750,7 +766,6 @@ def validate_and_filter_polygons(
     log_path = os.path.join(out_folder or '.', 'polygon_processing_log.csv')
     processing_log = create_processing_log(
         regions,
-        end_dates_list if end_dates_list else ['processing'],
         output_path=log_path
     )
     

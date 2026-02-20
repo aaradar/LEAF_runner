@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import xarray as xr
+import warnings
 from datetime import datetime
 
 import eoImage as eoIM
@@ -136,6 +137,9 @@ def makeIndexLayer(LCMap, DSOptions):
     print('<makeIndexLayer> Landcover map is not available!')
     return None
   
+  # Fill NaN values with 0, then cast to int
+  LCMap = LCMap.fillna(0).astype(int)
+
   classLegend = DSOptions["legend"]
   Network_Ind = DSOptions["Network_Ind"]
 
@@ -148,9 +152,16 @@ def makeIndexLayer(LCMap, DSOptions):
   
   # Create a mapping dictionary
   mapping_dict = {LC_IDs[i]: netIDs[i] for i in range(len(LC_IDs))}
+  
+  # Find any unmapped LC values and warn user
+  unique_lc_values = np.unique(LCMap.values).astype(int)
+  unmapped_values = [v for v in unique_lc_values if v not in mapping_dict and not np.isnan(v)]
+  if unmapped_values:
+    warnings.warn(f"Land cover values {unmapped_values} not found in mapping dictionary. "
+                  f"Mapping these to network ID 0. Mapped LC classes: {list(mapping_dict.keys())}")
 
-  # Apply the mapping to the land cover map
-  netID_map_np = np.vectorize(mapping_dict.get)(LCMap)
+  # Apply the mapping to the land cover map with default value 0 for unmapped classes
+  netID_map_np = np.vectorize(lambda x: mapping_dict.get(x, 0), otypes=[int])(LCMap)
   
   netID_map = LCMap.copy(deep=True)
   netID_map.data = netID_map_np

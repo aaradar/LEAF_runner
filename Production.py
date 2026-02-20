@@ -232,6 +232,22 @@ def main(inProdParams, inCompParams):
     return
      
   #==========================================================================================================
+  # Remove the keys that are invalid in mosaic production
+  #==========================================================================================================
+  INVALID_KEYS = {
+    "regions_start_index",
+    "regions_end_index",
+    "spatial_buffer_m",
+    "temporal_buffer",
+    "num_years",
+    "file_variables"
+  }
+
+  for key in list(inProdParams.keys()):
+      if key in INVALID_KEYS:
+          inProdParams.pop(key)
+
+  #==========================================================================================================
   # Determine which product, mosaic image or vegetation biophysical parameter maps, will be generated
   #==========================================================================================================
   prod_type = eoPM.which_product(prod_params)
@@ -241,8 +257,6 @@ def main(inProdParams, inCompParams):
   else:
     MosaicProduction(prod_params, comp_params)
     
-
-
 
 #############################################################################################################
 # Description: The following code will be called only when executed within VSCode; it will be ignored when

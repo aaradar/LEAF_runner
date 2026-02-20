@@ -82,7 +82,9 @@ def create_LEAF_maps(ProdParams, CompParams):
   #==========================================================================================================
   # Define a function that can produce vegetation parameter maps for ONE granule
   #==========================================================================================================
+  print('\n<create_LEAF_maps> Bands in mosaic before rescaling:', list(mosaic.data_vars))
   ready_mosaic = eoIM.rescale_spec_bands(mosaic, SsrData['LEAF_BANDS'], 0.01, 0)
+  print('<create_LEAF_maps> Bands in ready_mosaic after rescaling:', list(ready_mosaic.data_vars))
   out_VP_maps  = SL2P_NetsTools.estimate_VParams(ProdParams, DS_Options, ready_mosaic, netID_map)  
     
   #==========================================================================================================

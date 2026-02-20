@@ -67,7 +67,12 @@ def regions_from_kml(kml_file, start=14, end=14, prefix="region", spatial_buffer
         selected_keys = sorted_keys[start : end + 1]
 
     if not selected_keys:
-        raise ValueError(f"No regions found in range [{start}:{end+1}]. File has {len(sorted_keys)} regions.")
+        print(f"  WARNING: No valid regions found in range [{start}:{end+1}].")
+        print(f"   File originally contained {len(sorted_keys)} regions, but all were filtered out")
+        print(f"   (likely due to collapsed geometries from negative buffer operations).")
+        print(f"   Continuing with empty region set...")
+        # Return empty dictionaries instead of raising error
+        return {}, {}, {}
 
     out = {}
     region_start_dates = {}

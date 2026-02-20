@@ -72,7 +72,7 @@ def which_product(ProdParams):
     # Covert all product name strings to lower cases
     prod_names = [s.lower() for s in ProdParams['prod_names']]  
 
-    if 'lai' in prod_names or 'fcov' in prod_names or 'fap' in prod_names or 'alb' in prod_names:
+    if 'lai' in prod_names or 'fcover' in prod_names or 'fapar' in prod_names or 'albebo' in prod_names:
       return 'veg_parama'
     elif 'mosaic' in prod_names:
       return 'mosaic' 
@@ -131,10 +131,12 @@ def get_query_conditions(inParams, StartStr, EndStr, Region):
     query_conds['collection'] = ["sentinel-2-l2a"]
     
     if 'bands' not in inParams:
-      query_conds['bands'] = SsrData['ALL_BANDS'] + ['scl'] if resolution > 15 else SsrData['SIX_BANDS'] + ['scl'] 
+      # Always use ALL_BANDS for Sentinel-2 to ensure rededge bands are loaded for LEAF processing
+      query_conds['bands'] = SsrData['ALL_BANDS'] + ['scl']
 
     else : 
-      required_bands = SsrData['ALL_BANDS'] + ['scl'] if resolution > 15 else SsrData['SIX_BANDS'] + ['scl'] 
+      # Always use ALL_BANDS for Sentinel-2 to ensure rededge bands are loaded for LEAF processing
+      required_bands = SsrData['ALL_BANDS'] + ['scl']
       for band in inParams['bands']:
           if band.lower() not in [b.lower() for b in required_bands]: 
               required_bands.append(band)
@@ -955,8 +957,8 @@ def get_time_window(inParams):
   #==========================================================================================================
   # Confirm required key:value pairs are defined
   #==========================================================================================================
-  if 'current_time' not in inParams or 'start_dates' not in inParams or 'end_dates' not in inParams:
-    print('\n<get_time_window> one of required keys is not exist!!')
+  if 'current_time' not in inParams or 'start_dates' not in inParams or 'end_dates' not in inParams: 
+    print('\n<get_time_window> one of required keys is not exist to form time.')
     return None, None
 
   #==========================================================================================================
