@@ -165,22 +165,22 @@ def MosaicProduction(ProdParams, CompParams):
             region_end_dates = usedParams['region_end_dates'].get(reg_name, region_start_dates)
             
             # Validate dates (check if any date is before 2016 for Sentinel-2)
-            valid_dates = True
-            for date in region_start_dates + region_end_dates:
-                if isinstance(date, str):
-                    date_year = int(date.split('-')[0])
-                else:
-                    date_year = date.year
+            #valid_dates = True
+            #for date in region_start_dates + region_end_dates:
+               # if isinstance(date, str):
+                   # date_year = int(date.split('-')[0])
+               # else:
+                 #   date_year = date.year
                 
-                if date_year < 2016:
-                    print(f'\n<MosaicProduction> WARNING: Region {reg_name} has dates before 2016 (Sentinel-2 launch)')
-                    print(f'  Region dates: {region_start_dates} to {region_end_dates}')
-                    print(f'  SKIPPING this region')
-                    valid_dates = False
-                    break
+                #if date_year < 2016:
+                  #  print(f'\n<MosaicProduction> WARNING: Region {reg_name} has dates before 2016 (Sentinel-2 launch)')
+                   # print(f'  Region dates: {region_start_dates} to {region_end_dates}')
+                  #  print(f'  SKIPPING this region')
+                  #  valid_dates = False
+                 #   break
             
-            if not valid_dates:
-                continue  # Skip this region
+            #if not valid_dates:
+               # continue  # Skip this region
             
             # Use region-specific dates
             print(f'\n<MosaicProduction> Using region-specific dates for {reg_name}')

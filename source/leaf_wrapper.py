@@ -92,18 +92,9 @@ def regions_from_kml(kml_file, start=14, end=14, prefix="region", spatial_buffer
             "coordinates": coords,
         }
         
-        # Extract dates - creates empty list if None
-        start_date = region_data.get("start_date")
-        if start_date:
-            region_start_dates[region_name] = [start_date]
-        else:
-            region_start_dates[region_name] = []
-        
-        end_date = region_data.get("end_date")
-        if end_date:
-            region_end_dates[region_name] = [end_date]
-        else:
-            region_end_dates[region_name] = []
+        # Extract dates - already in list format from to_region_dict
+        region_start_dates[region_name] = region_data.get("start_dates", [])
+        region_end_dates[region_name] = region_data.get("end_dates", [])
     
     return out, region_start_dates, region_end_dates
 
@@ -328,28 +319,44 @@ class LeafWrapper:
                 print(f"Warning: Skipping geometry {key} - type {geom.geom_type} could not be converted to polygon")
                 continue
             
-            # Extract date fields (only if columns exist and are not None)
-            start_date = None
-            end_date = None
+            # Extract date fields - handle both single dates and comma-separated lists
+            start_dates = []
+            end_dates = []
             
             if start_col is not None and start_col in gdf_geo.columns:
-                start_date = row.get(start_col)
-                # Convert Timestamp to string if needed
-                if start_date is not None and hasattr(start_date, 'strftime'):
-                    start_date = start_date.strftime('%Y-%m-%d')
+                start_date_value = row.get(start_col)
+                if start_date_value is not None:
+                    # Handle comma-separated dates or single date
+                    if isinstance(start_date_value, str):
+                        # Split by comma and clean whitespace
+                        start_dates = [d.strip() for d in start_date_value.split(',')]
+                    elif hasattr(start_date_value, 'strftime'):
+                        # Single Timestamp object
+                        start_dates = [start_date_value.strftime('%Y-%m-%d')]
+                    else:
+                        # Try to convert to string
+                        start_dates = [str(start_date_value)]
                 
             if end_col is not None and end_col in gdf_geo.columns:
-                end_date = row.get(end_col)
-                # Convert Timestamp to string if needed
-                if end_date is not None and hasattr(end_date, 'strftime'):
-                    end_date = end_date.strftime('%Y-%m-%d')
+                end_date_value = row.get(end_col)
+                if end_date_value is not None:
+                    # Handle comma-separated dates or single date
+                    if isinstance(end_date_value, str):
+                        # Split by comma and clean whitespace
+                        end_dates = [d.strip() for d in end_date_value.split(',')]
+                    elif hasattr(end_date_value, 'strftime'):
+                        # Single Timestamp object
+                        end_dates = [end_date_value.strftime('%Y-%m-%d')]
+                    else:
+                        # Try to convert to string
+                        end_dates = [str(end_date_value)]
             
             # Package region data
             regions[key] = {
                 "r_id": key,
                 "coordinates": coords[0],
-                "start_date": start_date,
-                "end_date": end_date
+                "start_dates": start_dates,
+                "end_dates": end_dates
             }
 
         return regions

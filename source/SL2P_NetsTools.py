@@ -137,7 +137,7 @@ def makeIndexLayer(LCMap, DSOptions):
     print('<makeIndexLayer> Landcover map is not available!')
     return None
   
-  # Fill NaN values with 0, then cast to int
+  # Fill NaN values with 0, then cast to int, no float ids
   LCMap = LCMap.fillna(0).astype(int)
 
   classLegend = DSOptions["legend"]

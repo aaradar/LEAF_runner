@@ -60,6 +60,7 @@ This README documents the new Parameter Preparation System added to the LEAF pro
 **Updated Files:**
 - `Production.py` — kml date handling
 - `LEAFProduction` — kml runs with region dates now. Bug fixing
+- `SL2P_NetsTools.py` — cast LCMap to type int and print values
 - `requirements.txt` — Two-step GeoPandas installation
 
 ---
@@ -318,7 +319,7 @@ If `temporal_buffer` is specified, it can work in two modes:
 
 **Offset Mode (apply days before/after):**
 ```python
-ProdParams['temporal_buffer'] = [-5, 5]  # [days_before, days_after]
+ProdParams['temporal_buffer'] = [[-5, 5]]  # [days_before, days_after]
 # '2023-06-01' becomes '2023-05-27' (start)
 # '2023-06-30' becomes '2023-07-05' (end)
 
