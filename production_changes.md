@@ -1,4 +1,6 @@
 # Production
+# Production.py 
+
 ## Line 144 - 211 (to process specific region dates)
     else:
     region_names = list(usedParams['regions'].keys())
@@ -85,16 +87,19 @@
   for key in list(inProdParams.keys()):
       if key in INVALID_KEYS:
           inProdParams.pop(key
+
     
-# LEAFProduction
+# LEAFProduction.py
+
 ## def LEAF_production(ProdParams, CompParams):
     To work with region dates
 
 ## Line 52 (to not crash)
      mosaic = eoMz.one_mosaic(ProdParams, CompParams)  # ← REMOVED the third argument
 
-# SL2P_NetTools (to make LC make work with sizes other than 30m)
-## Line 140 - 141 
+# SL2P_NetTools.py 
+
+## Line 140 - 141 (to make LC make work with sizes other than 30m)
   #Fill NaN values with 0, then cast to int
   LCMap = LCMap.fillna(0).astype(int)
 
@@ -110,13 +115,16 @@
   netID_map_np = np.vectorize(lambda x: mapping_dict.get(x, 0), otypes=[int])(LCMap)
   
 
-# eoMosiac
+# eoMosiac.py 
+
 ## Line 1225-1227
     # Always use load_STAC_items with the requested resolution to ensure all bands are loaded
     # in the same coordinate system. Let odc.stac.load() handle the resampling automatically.
     xrDS_S2 = load_STAC_items(filtered_items['S2'], Bands, ChunkDict, ProjStr, Scale)  
 
-# eoParams
+
+# eoParams.py 
+
 ## Line 75 (to get fcover to work)
     before
     if 'lai' in prod_names or 'fcov' in prod_names or 'fap' in prod_names or 'alb' in prod_names:
