@@ -685,30 +685,44 @@ def valid_CompParams(CompParams):
 
 
 
+
 #############################################################################################################
 # Description: This function creates the start and end dates for a list of user-specified months and save 
 #              them into two lists with 'start_dates' and 'end_dates' keys.
 #
 # Revision history  2024-Sep-03  Lixin Sun  Initial creation
+#                   2026-Mar     Fixed: when months=[] and no custom window exists (region-specific dates
+#                                workflow), do NOT overwrite existing start_dates/end_dates with an empty
+#                                list.  Instead preserve them and mark monthly=False.
 #
 #############################################################################################################
 def form_time_windows(inParams):
 
   if not has_custom_window(inParams):
-    inParams['monthly'] = True
-    nMonths = len(inParams['months'])  # get the number of specified months
+    months = inParams.get('months', [])
 
-    year = inParams['year']
-    for index in range(nMonths):
-      month = inParams['months'][index]
-      start, end = eoUs.month_range(year, month)
+    if months:
+      # Standard monthly workflow: build start/end date lists from the month list
+      inParams['monthly'] = True
+      year = inParams['year']
+      for index, month in enumerate(months):
+        start, end = eoUs.month_range(year, month)
+        if index == 0:
+          inParams['start_dates'] = [start]
+          inParams['end_dates']   = [end]
+        else:  
+          inParams['start_dates'].append(start)
+          inParams['end_dates'].append(end)
 
-      if index == 0:
-        inParams['start_dates'] = [start]
-        inParams['end_dates']   = [end]
-      else:  
-        inParams['start_dates'].append(start)
-        inParams['end_dates'].append(end) 
+    else:
+      # No months specified and no custom window — this is expected when the caller
+      # is using the region-specific dates workflow and has already injected placeholder
+      # start/end dates.  Do NOT overwrite them; just ensure monthly=False.
+      if not inParams.get('start_dates'):
+        print('<form_time_windows> WARNING: No months and no start_dates defined. '
+              'start_dates will be empty — ensure region-specific dates are injected '
+              'before calling one_mosaic().')
+      inParams['monthly'] = False
 
   elif 'standardized' not in inParams:
     inParams['monthly'] = False
@@ -1253,26 +1267,26 @@ def cmd_arguments(argv=None):
   
   return prod_params, comp_params
 
-  
 def earth_data_authentication():
+    netrc_path = os.path.expanduser('~/.netrc')
+    machine = 'urs.earthdata.nasa.gov'
     
-  netrc_path = os.path.expanduser('~/.netrc')
-  try:
-    netrc_data = netrc.netrc(netrc_path)
-    # Get the login credentials for the specified machine (e.g., 'urs.earthdata.nasa.gov')
-    machine = 'urs.earthdata.nasa.gov'  # Replace with the machine name you want to extract credentials for
-    login, _, password = netrc_data.authenticators(machine)
-    if login and password:
-      pass
-    else:
-      print("<<<<<<<<<<The .netrc file does not exist. Please run the following command first:")
-      print("<<<<<<<<<< ")
-      print(' echo "machine urs.earthdata.nasa.gov login **your username** password **your password**" > ~/.netrc ')
-      print(">>>>>>>>>> ")
-      sys.exit(1)
-  except Exception as e:
-      print("<<<<<<<<<<The .netrc file does not exist. Please run the following command first:")
-      print("<<<<<<<<<< ")
-      print(' echo "machine urs.earthdata.nasa.gov login **your username** password **your password**" > ~/.netrc ')
-      print(">>>>>>>>>> ")
-      sys.exit(1)
+    try:
+        netrc_data = netrc.netrc(netrc_path)
+        login, _, password = netrc_data.authenticators(machine)
+        
+        if not login or not password:
+            raise ValueError("Empty credentials")
+            
+    except Exception as e:
+        print("<<<<<<<<<<The .netrc file does not exist. Please run the following command first:")
+        print("<<<<<<<<<< ")
+        print(' echo "machine urs.earthdata.nasa.gov login **your username** password **your password**" > ~/.netrc ')
+        print(">>>>>>>>>> ")
+        sys.exit(1)
+    
+    # Actually authenticate and return a session
+    import earthaccess
+    auth = earthaccess.login(strategy="netrc")
+    
+    return login, password, auth

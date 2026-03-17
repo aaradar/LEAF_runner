@@ -20,6 +20,11 @@ else:
   os.environ["GDAL_HTTP_COOKIEJAR"]  = cookie_file
   os.environ["GDAL_HTTP_COOKIEFILE"] = cookie_file
 
+# Force .netrc path on Windows for earthaccess/requests
+if platform.system() == "Windows":
+    netrc_path = os.path.join(os.path.expanduser("~"), ".netrc")
+    os.environ['NETRC'] = netrc_path
+
 import gc
 import sys
 import dask
@@ -220,53 +225,119 @@ def search_STAC_Catalog(inParams, MaxImgs):
   # Use publicly available STAC 
   #==========================================================================================================
   Criteria = inParams['Criteria']
-  catalog  = psc.Client.open(str(Criteria['catalog']))
 
   #==========================================================================================================
-  # Search and filter a image collection
+  # Fix winding order: NASA CMR STAC requires counter-clockwise winding order (right-hand rule).
+  # Reorder polygon coordinates using shapely to ensure compliance.
   #==========================================================================================================
+  from shapely.geometry import shape, mapping
+  from shapely.geometry.polygon import orient
   Region = Criteria['region']
+  Region = mapping(orient(shape(Region), sign=1.0))
+  Criteria['region'] = Region
   print('<search_STAC_Images> The given region = ', Region)
 
-  nCollections = len(Criteria['collection'])
-  if nCollections > 1:   #For the case of "HLS_SR", which includes two collections: "HLSS30_SR" and "HLSL30_SR"  
+  #==========================================================================================================
+  # Fix datetime format: NASA CMR requires full RFC3339 timestamps with time and Z suffix.
+  # e.g. '2025-08-01T00:00:00Z/2025-08-31T23:59:59Z' instead of '2025-08-01/2025-08-31'
+  #==========================================================================================================
+  tf     = str(Criteria['timeframe'])
+  parts  = tf.split('/')
+  start_dt = parts[0] if 'T' in parts[0] else parts[0] + 'T00:00:00Z'
+  end_dt   = parts[1] if 'T' in parts[1] else parts[1] + 'T23:59:59Z'
+  datetime_str = f'{start_dt}/{end_dt}'
+
+  is_nasa = 'earthdata.nasa.gov' in str(Criteria['catalog']) or 'LPCLOUD' in str(Criteria['catalog'])
+
+  if is_nasa:
+    #========================================================================================================
+    # For NASA LPCLOUD: bypass pystac_client entirely to avoid the CMR GraphQL "context creation" error.
+    # Instead, POST directly to the STAC search endpoint using an earthaccess authenticated session.
+    # This also avoids the cloud_cover query filter which NASA's STAC does not support reliably.
+    # Limit is capped at 200 to stay safely under the 255-item AWS Lambda 6MB payload limit.
+    #========================================================================================================
+    import json
+    import pystac
+    import earthaccess
+
+    earthaccess.login(strategy="netrc")
+    session    = earthaccess.get_requests_https_session()
+    search_url = "https://cmr.earthdata.nasa.gov/stac/LPCLOUD/search"
     stac_items = []
+
     for coll in Criteria['collection']:
-      stac_catalog = catalog.search(collections = [coll], 
+      payload = {
+        "collections": [coll],
+        "intersects":  Region,
+        "datetime":    datetime_str,
+        "limit":       min(MaxImgs, 200)   # stay under the 255-item Lambda payload cap
+      }
+      response = session.post(search_url, json=payload)
+      response.raise_for_status()
+      features = response.json().get("features", [])
+      print(f"<search_STAC_Catalog> Number of items found in collection {coll}: {len(features)}")
+
+      # ---- ADD THIS BLOCK ---- maybe nmakes it faster
+      cloud_limit = Criteria.get('filters', {}).get('eo:cloud_cover', {}).get('lt', 100)
+      features = [f for f in features if f.get('properties', {}).get('eo:cloud_cover', 100) < cloud_limit]
+      print(f"<search_STAC_Catalog> Number of items after cloud filter (<{cloud_limit}%): {len(features)}")
+      # ------------------------
+
+
+      if not features:
+        print(f"<search_STAC_Catalog> WARNING: No items found in {coll}, skipping.")
+        continue
+
+      for f in features:
+        stac_items.append(pystac.Item.from_dict(f))
+
+    if not stac_items:
+      raise ValueError("No STAC items found. Adjust region, time range, or filters.")
+
+  else:
+    #========================================================================================================
+    # For AWS Element84 (Sentinel-2, Landsat): use pystac_client normally.
+    # The cloud_cover query filter is supported here.
+    #========================================================================================================
+    catalog    = psc.Client.open(str(Criteria['catalog']))
+    stac_items = []
+
+    nCollections = len(Criteria['collection'])
+    if nCollections > 1:
+      for coll in Criteria['collection']:
+        stac_catalog = catalog.search(collections = [coll],
+                                      intersects  = Region,
+                                      datetime    = datetime_str,
+                                      query       = Criteria['filters'],
+                                      limit       = MaxImgs)
+
+        items = list(stac_catalog.items())
+        print(f"<search_STAC_Catalog> Number of items found in collection {coll}: {len(items)}")
+
+        if not items:
+          raise ValueError("No STAC items found. Adjust region, time range, or filters.")
+
+        stac_items.extend(items)
+
+    else:
+      stac_catalog = catalog.search(collections = Criteria['collection'],
                                     intersects  = Region,
-                                    datetime    = str(Criteria['timeframe']),
+                                    datetime    = datetime_str,
                                     query       = Criteria['filters'],
                                     limit       = MaxImgs)
-      
-      # Get the items from the catalog
-      items = list(stac_catalog.items())
-      print(f"<search_STAC_Catalog> Number of items found in collection {coll}: {len(items)}")
 
-      if not items:
-        raise ValueError("No STAC items found. Adjust region, time range, or filters.")
-
-      stac_items.extend(items)      
-      
-  else:
-    stac_catalog = catalog.search(collections = Criteria['collection'], 
-                                  intersects  = Region,                           
-                                  datetime    = str(Criteria['timeframe']),
-                                  query       = Criteria['filters'],
-                                  limit       = MaxImgs)
-    
-    stac_items = list(stac_catalog.items())
+      stac_items = list(stac_catalog.items())
 
   #==========================================================================================================
   # Ingest imaging geometry angles into each STAC item
+  # Note: only needed for AWS data catalog, where angles are not embedded in item properties
   #==========================================================================================================
   ssr_str = str(inParams['sensor']).lower()
-  if 'hls' not in ssr_str:   # For AWS data catalog, where imaging angles are not directly available
+  if 'hls' not in ssr_str:
     stac_items, angle_time = ingest_Geo_Angles(stac_items)
     print('\n<search_STAC_Catalog> The total elapsed time for ingesting angles = %6.2f minutes'%(angle_time))
 
   return stac_items
-
-
 
 #############################################################################################################
 # Description: This function returns the grid/granule code of a given STAC item.

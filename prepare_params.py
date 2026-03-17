@@ -26,6 +26,7 @@ from typing import Dict, List, Tuple, Optional, Any
 # Import required modules
 from Production import ProdParams
 import source.leaf_wrapper as leafWrapper
+from source.s2_tile_processor import resolve_s2_tiles
 from source.polygon_validator import (
     filter_valid_polygons,
     create_processing_log,
@@ -217,6 +218,22 @@ def validate_production_params(ProdParams: Dict[str, Any]) -> Tuple[bool, List[s
                 f"Must be 1 or greater"
             )
     
+    # ============ VALIDATE MODE ============
+    if 'mode' in ProdParams:
+        mode = ProdParams['mode']
+        
+        if not isinstance(mode, str):
+            errors.append(
+                f"Invalid 'mode' type: {type(mode).__name__}. "
+                f"Must be a string"
+            )
+        elif mode not in ("regions", "tiles"):
+            errors.append(
+                f"Invalid 'mode' value: '{mode}'. "
+                f"Must be either 'regions' or 'tiles'"
+            )
+    
+    
     # Return validation results
     is_valid = len(errors) == 0
     return is_valid, errors
@@ -261,6 +278,26 @@ def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
                 spatial_buffer_m=ProdParams.get("spatial_buffer_m", None),
                 file_variables=ProdParams.get("file_variables", None)
             )
+
+             # ==================== HANDLE TILES MODE ====================
+            # If mode="tiles", convert regions to Sentinel-2 tile footprints
+            if ProdParams.get("mode") == "tiles":
+                print(f"<handle_regions_from_file> Resolving Sentinel-2 tiles...")
+                # Note: regions_dict already has the start/end indices applied from regions_from_kml()
+                # So use all loaded regions, not the original indices again
+                selected_keys = sorted(regions_dict.keys())
+                
+                regions_dict, region_start_dates, region_end_dates = resolve_s2_tiles(
+                    regions_dict=regions_dict,
+                    selected_keys=selected_keys,
+                    s2_grid_path=ProdParams.get("s2_grid_path", None),
+                    keep_first_match_only=True
+                )
+                
+                # Update ProdParams with the tile-converted regions and dates
+                ProdParams["regions"] = regions_dict
+                ProdParams["region_start_dates"] = region_start_dates
+                ProdParams["region_end_dates"] = region_end_dates
             
             # ==================== HANDLE EMPTY REGIONS CASE ====================
             if not regions_dict:
@@ -915,6 +952,16 @@ def prepare_production_params(
     print(f"Start Time windows: {ProdParams.get('region_start_dates', [])}")
     print(f"End Time windows: {ProdParams.get('region_end_dates', [])}")
     print("="*80 + "\n")
+    
+    # Add properties to regions at the end (everything except regions and their dates)
+    if 'regions' in ProdParams and isinstance(ProdParams['regions'], dict):
+        properties = {k: v for k, v in ProdParams.items() if k not in ['regions', 'region_start_dates', 'region_end_dates']}
+        ProdParams['regions']['properties'] = properties
+        
+        # Print properties for debugging
+        import json
+        print("\n<prepare_production_params> Added properties to regions:")
+        print(json.dumps(properties, indent=2, default=str))
     
     return {
         'ProdParams': ProdParams,

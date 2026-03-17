@@ -108,6 +108,33 @@ def MosaicProduction(ProdParams, CompParams):
        CompParams(Python Dictionary): A dictionary containing input parameters related to used computing environment.
   '''
   #==========================================================================================================
+  # When region-specific dates are provided but no global months/start_dates exist, inject a placeholder
+  # start/end date so that standardize_params -> form_time_windows -> get_time_window never returns None/None.
+  # The real per-region dates will overwrite these before any mosaic call is made.
+  #==========================================================================================================
+  has_region_dates_input = (
+      'region_start_dates' in ProdParams and
+      'region_end_dates'   in ProdParams and
+      len(ProdParams['region_start_dates']) > 0
+  )
+  no_global_dates = (
+      not ProdParams.get('months') and
+      not ProdParams.get('start_dates')
+  )
+
+  if has_region_dates_input and no_global_dates:
+    # Pick the first available date from any region as a safe placeholder for standardization.
+    # The real per-region dates are applied inside the loop below, before one_mosaic() is called.
+    first_region      = next(iter(ProdParams['region_start_dates']))
+    placeholder_start = ProdParams['region_start_dates'][first_region][0]
+    placeholder_end   = ProdParams['region_end_dates'].get(first_region, [placeholder_start])[0]
+    ProdParams['start_dates'] = [placeholder_start]
+    ProdParams['end_dates']   = [placeholder_end]
+    ProdParams['monthly']     = False
+    print(f'<MosaicProduction> Injected placeholder dates for standardization: '
+          f'{placeholder_start} / {placeholder_end}')
+
+  #==========================================================================================================
   # Standardize the parameter dictionaries so that they are applicable for mosaic generation
   #==========================================================================================================
   usedParams = eoPM.get_mosaic_params(ProdParams, CompParams)  
@@ -164,31 +191,14 @@ def MosaicProduction(ProdParams, CompParams):
             region_start_dates = usedParams['region_start_dates'][reg_name]
             region_end_dates = usedParams['region_end_dates'].get(reg_name, region_start_dates)
             
-            # Validate dates (check if any date is before 2016 for Sentinel-2)
-            #valid_dates = True
-            #for date in region_start_dates + region_end_dates:
-               # if isinstance(date, str):
-                   # date_year = int(date.split('-')[0])
-               # else:
-                 #   date_year = date.year
-                
-                #if date_year < 2016:
-                  #  print(f'\n<MosaicProduction> WARNING: Region {reg_name} has dates before 2016 (Sentinel-2 launch)')
-                   # print(f'  Region dates: {region_start_dates} to {region_end_dates}')
-                  #  print(f'  SKIPPING this region')
-                  #  valid_dates = False
-                 #   break
-            
-            #if not valid_dates:
-               # continue  # Skip this region
-            
             # Use region-specific dates
             print(f'\n<MosaicProduction> Using region-specific dates for {reg_name}')
             print(f'  Start dates: {region_start_dates}')
             print(f'  End dates: {region_end_dates}')
             
             usedParams['start_dates'] = region_start_dates
-            usedParams['end_dates'] = region_end_dates
+            usedParams['end_dates']   = region_end_dates
+            usedParams['monthly']     = False
             nTimes = len(region_start_dates)
             
         else:
@@ -198,17 +208,35 @@ def MosaicProduction(ProdParams, CompParams):
             continue
         
         # Process all time windows for this region
-        # Process all time windows for this region
         for TIndex in range(nTimes):
-            # Set monthly flag based on whether we're using region dates
-            usedParams['monthly'] = False  # Region-specific dates are not monthly
             usedParams = eoPM.set_current_time(usedParams, TIndex)
-            
+
+            # ------------------------------------------------------------------
+            # Guard: set_current_time updates Criteria['timeframe'], but only
+            # when get_time_window succeeds.  Double-check here so that a
+            # bad timeframe string never reaches the STAC API.
+            # ------------------------------------------------------------------
+            start_check = usedParams['start_dates'][TIndex]
+            end_check   = usedParams['end_dates'][TIndex]
+            if start_check is None or end_check is None:
+                print(f'<MosaicProduction> WARNING: None date for {reg_name} at index {TIndex}, skipping.')
+                continue
+
+            # Explicitly refresh Criteria timeframe in case set_current_time
+            # silently failed to update it (e.g. due to a previous None state).
+            if 'Criteria' in usedParams:
+                usedParams['Criteria']['timeframe'] = f'{start_check}/{end_check}'
+                usedParams['Criteria']['region']    = usedParams['regions'][reg_name]
+
+            print(f'<MosaicProduction> Processing {reg_name} | '
+                  f'time window: {start_check} / {end_check}')
+
             # Process mosaic
             eoMz.one_mosaic(usedParams, CompParams)
-    # NEW: Restore default dates after processing
+
+    # Restore default dates after processing
     usedParams['start_dates'] = default_start_dates
-    usedParams['end_dates'] = default_end_dates
+    usedParams['end_dates']   = default_end_dates
 
 
 #############################################################################################################
@@ -240,12 +268,18 @@ def main(inProdParams, inCompParams):
     "spatial_buffer_m",
     "temporal_buffer",
     "num_years",
-    "file_variables"
+    "file_variables",
+    "mode",
+    "s2_grid_path"
   }
 
   for key in list(inProdParams.keys()):
       if key in INVALID_KEYS:
           inProdParams.pop(key)
+  
+  # Remove 'properties' key if it was added during parameter preparation
+  if 'properties' in inProdParams.get('regions', {}):
+      del inProdParams['regions']['properties']
 
   #==========================================================================================================
   # Determine which product, mosaic image or vegetation biophysical parameter maps, will be generated
@@ -270,4 +304,3 @@ if __name__ == "__main__":
   args = parser.parse_args()
 
   main(args.ProdParams, args.CompParams)
-

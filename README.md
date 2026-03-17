@@ -1,5 +1,6 @@
 # Parameter Preparation System - README
 
+# add S2A_OPER_GIP_TILPAR_MPC.kml from HLS MGRS (file size too large)
 ## Installation
 
 **Step 0: Create and activate a Conda environment**
@@ -47,6 +48,7 @@ This README documents the new Parameter Preparation System added to the LEAF pro
 - `test_regions_kml.py` - Output validation tests for kml files
 - `LEAF_runner.png` - Flowchart of the new/updated files
 - `source/leaf_wrapper.py` — Region conversion module
+- `source/s2_tile_processor.py` — Process S2 tiles in tile mode
 - `source/polygon_validator.py` — Zero-area polygon detection and validation
 - `Sample Points/AfforestationSItesFixed.kml` — Example KML file with afforestation polygons
 - `Sample Points/FieldPoints32_2018.shp` — Example Shapefile with point geometries
@@ -56,11 +58,13 @@ This README documents the new Parameter Preparation System added to the LEAF pro
 - `Sample Points/ShapeTest.py` — kml/shp to csv testing
 - `testing/test_leaf_wrapper.py` — Output validation tests for both KML and SHP
 - `testing/test_negative_buffer.py` — Output validation tests for buffers and polygon integrity
+- `testing/params.py` — params and run time for 10m, 20m and 32/10 w 16/50 g
 
 **Updated Files:**
-- `Production.py` — kml date handling
+- `Production.py` — kml date handling, key handling
 - `LEAFProduction` — kml runs with region dates now. Bug fixing
 - `SL2P_NetsTools.py` — cast LCMap to type int and print values
+- `eoParams.py` — fix fcover bug
 - `requirements.txt` — Two-step GeoPandas installation
 
 ---
@@ -99,6 +103,19 @@ This README documents the new Parameter Preparation System added to the LEAF pro
 - Temporal buffer extraction from file attributes
 - Point-to-polygon conversion
 - Z-coordinate removal (3D → 2D)
+- Flexible ID handling (preserves string or integer IDs)
+
+
+### 3.1. **s2_tile_processor.py** - Region File Handler
+**Location:** `./source/s2_tile_processor.py`
+
+**Purpose:** Reads regions dict and dates and converts them to LEAF-compatible s2 grid tiles.
+
+**Key Features:**
+- parquet file support
+- Conversion of dict into tile grids
+- Handles mode ='tiles' conversion by finding all S2 MGRS tiles that intersect 
+- selected regions and returning their tile footprints instead of the regions themselves.
 - Flexible ID handling (preserves string or integer IDs)
 
 ### 4. **Production.py** - Updated Main Production Script
@@ -191,6 +208,10 @@ prepare_params.py
 │           ├── load() - reads KML/SHP
 │           ├── _apply_buffer() - spatial buffering
 │           └── to_region_dict() - converts to LEAF format
+│
+├── imports s2_tile_processor.py
+│   ├── resolve_s2_tiles() - tiles according to regions
+│   └── _find_tile_name_column() - finds tile name columns
 │
 ├── imports polygon_validator.py
 │   ├── filter_valid_polygons() - removes zero-area polygons

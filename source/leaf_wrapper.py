@@ -1,22 +1,31 @@
 import geopandas as gpd
 from pathlib import Path
 from typing import Dict, List, Union, Optional
-from shapely.geometry import mapping
+from shapely.geometry import mapping, shape
 from shapely.geometry import Polygon as ShapelyPolygon
 from shapely.ops import unary_union, transform
 import re
 
 #############################################################################################################
-# Description: This function reads a KML or Shapefile containing polygon/point features and converts them
+# Description: This module reads a KML or Shapefile containing polygon/point features and converts them
 #              into a LEAF-compatible region dictionary. For shapefiles with Point geometries, a spatial
 #              buffer can be applied to convert points to polygons. The output dictionary maps user-defined
 #              region names to GeoJSON-like Polygon objects, which can be directly passed to
 #              ProdParams['regions'] for mosaic generation.
 #
-# Revision history: 2025-January-19 Alexander Radar Initial creation
+#              - Handles "regions" mode: one entry per input polygon
+#              - For "tiles" mode, use s2_tile_processor module instead
 #############################################################################################################
 
-def regions_from_kml(kml_file, start=14, end=14, prefix="region", spatial_buffer_m=None, file_variables=None):
+
+def regions_from_kml(
+    kml_file,
+    start=14,
+    end=14,
+    prefix="region",
+    spatial_buffer_m=None,
+    file_variables=None,
+):
     """
     Load a KML or Shapefile and return a dict of polygon regions by file ID.
     Selects regions at positions [start:end+1] from the sorted file.
@@ -42,12 +51,12 @@ def regions_from_kml(kml_file, start=14, end=14, prefix="region", spatial_buffer
     tuple
         (regions_dict, region_start_dates, region_end_dates)
         Regions keyed as "{prefix}{file_id}". Example: {'region20': {...}, 'region39': {...}, 'region45': {...}}
-        
+
     Example:
         # File has 10 regions with IDs 20, 39, 45, 47, 52, 53, 57, 61, ...
-        regions, start_dates, end_dates = regions_from_kml('file.kml', start=1, end=5, 
+        regions, start_dates, end_dates = regions_from_kml('file.kml', start=1, end=5,
                                                             file_variables=['TARGET_FID', None, None])
-        # Returns: ({'region39': {...}, 'region45': {...}, ...}, 
+        # Returns: ({'region39': {...}, 'region45': {...}, ...},
         #           {'region39': [], 'region45': [], ...},
         #           {'region39': [], 'region45': [], ...})
     """
@@ -74,28 +83,29 @@ def regions_from_kml(kml_file, start=14, end=14, prefix="region", spatial_buffer
         # Return empty dictionaries instead of raising error
         return {}, {}, {}
 
+    # ── Build output regions ────────────────────────────────
     out = {}
     region_start_dates = {}
     region_end_dates = {}
-    
+
     for key in selected_keys:
         region_data = regions_dict[key]
         file_id = region_data.get("r_id", key)
         coords = region_data.get("coordinates", [])
         if not coords:
             continue
-        
+
         region_name = f"{prefix}{file_id}"
-        
+
         out[region_name] = {
             "type": "Polygon",
             "coordinates": coords,
         }
-        
+
         # Extract dates - already in list format from to_region_dict
         region_start_dates[region_name] = region_data.get("start_dates", [])
         region_end_dates[region_name] = region_data.get("end_dates", [])
-    
+
     return out, region_start_dates, region_end_dates
 
 
@@ -151,51 +161,51 @@ class LeafWrapper:
         """Apply spatial buffer to geometries, converting to appropriate CRS if needed."""
         if self.gdf is None:
             raise ValueError("No data loaded")
-        
+
         original_crs = self.gdf.crs
-        
+
         if self.gdf.crs is None:
             print("Warning: No CRS defined, assuming EPSG:4326")
             self.gdf = self.gdf.set_crs("EPSG:4326")
-        
+
         # Reproject to EPSG:3979 for buffering
         gdf_projected = self.gdf.to_crs("EPSG:3979")
-        
+
         # **FIX: Ensure geometries are valid before buffering**
         gdf_projected['geometry'] = gdf_projected.geometry.apply(
             lambda geom: geom.buffer(0) if not geom.is_valid else geom
         )
-        
+
         def safe_buffer(geom):
             """Apply buffer and handle collapsed geometries"""
             # **FIX: Ensure input geometry is valid**
             if not geom.is_valid:
                 geom = geom.buffer(0)
-            
+
             # **FIX: Use resolution parameter for smoother results**
             buffered = geom.buffer(self.spatial_buffer_m, resolution=16)
-            
+
             # If negative buffer collapses geometry, warn but continue
             if buffered.is_empty or buffered.area == 0:
                 print(f"Warning: Buffer of {self.spatial_buffer_m}m collapsed geometry. "
-                    f"Original area: {geom.area:.2f} m²")
-            
+                      f"Original area: {geom.area:.2f} m²")
+
             # **FIX: Ensure output is valid**
             if not buffered.is_valid:
                 buffered = buffered.buffer(0)
-                
+
             return buffered
-        
+
         try:
             gdf_projected['geometry'] = gdf_projected.geometry.apply(safe_buffer)
         except ValueError as e:
             print(f"ERROR: {e}")
             raise
-        
+
         # Convert back to original CRS
         target_crs = original_crs if original_crs is not None else "EPSG:4326"
         self.gdf = gdf_projected.to_crs(target_crs)
-        
+
         print(f"Applied {self.spatial_buffer_m}m buffer to geometries")
 
     def to_region_dict(self, use_target_fid: bool = True) -> Dict[int, Dict]:
@@ -248,7 +258,7 @@ class LeafWrapper:
                     key = idx
             else:
                 key = idx if isinstance(idx, int) else 0
-                
+
             geom = row.geometry
             if geom.is_empty:
                 continue
@@ -336,7 +346,7 @@ class LeafWrapper:
                     else:
                         # Try to convert to string
                         start_dates = [str(start_date_value)]
-                
+
             if end_col is not None and end_col in gdf_geo.columns:
                 end_date_value = row.get(end_col)
                 if end_date_value is not None:
@@ -350,7 +360,7 @@ class LeafWrapper:
                     else:
                         # Try to convert to string
                         end_dates = [str(end_date_value)]
-            
+
             # Package region data
             regions[key] = {
                 "r_id": key,
