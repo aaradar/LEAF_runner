@@ -291,7 +291,8 @@ def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
                     regions_dict=regions_dict,
                     selected_keys=selected_keys,
                     s2_grid_path=ProdParams.get("s2_grid_path", None),
-                    keep_first_match_only=True
+                    keep_first_match_only=True,
+                    subdivide=ProdParams.get("subdivide_tiles", False)
                 )
                 
                 # Update ProdParams with the tile-converted regions and dates

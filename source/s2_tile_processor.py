@@ -28,8 +28,6 @@ from typing import Dict, List, Tuple
 from shapely.geometry import shape
 from shapely.ops import unary_union
 
-# Default path to the Sentinel-2 tile grid file — expected alongside this script.
-# Download sentinel-2-grid.parquet from: https://github.com/maawoo/sentinel-2-grid-geoparquet
 _DEFAULT_S2_GRIDS = {
     "parquet": Path(__file__).parent / "sentinel-2-grid.parquet",
     "kml":     Path(__file__).parent / "S2A_OPER_GIP_TILPAR_MPC.kml",
@@ -41,6 +39,7 @@ def resolve_s2_tiles(
     selected_keys: List,
     s2_grid_path=_DEFAULT_S2_GRIDS["parquet"],
     keep_first_match_only: bool = False,
+    subdivide: bool = False,
 ) -> Tuple[Dict, Dict, Dict]:
     """
     Find all Sentinel-2 MGRS tiles that intersect the selected regions and
@@ -60,6 +59,11 @@ def resolve_s2_tiles(
         If True, for each source region keep only the first (primary) intersecting
         tile. This avoids returning multiple overlapping MGRS tiles for a single
         region. If False (default), all intersecting tiles are returned.
+    subdivide : bool, default False
+        If True, each resolved tile is split into a 2x2 grid of equal subtiles
+        (4 quadrants), yielding ~50x50 km footprints for standard 100x100 km
+        S2 tiles. Subtile keys are suffixed: e.g. "tile_18TXR_NW", "_NE", "_SW", "_SE".
+        Subtiles that do not intersect any source region are dropped automatically.
 
     Returns:
     --------
@@ -70,7 +74,6 @@ def resolve_s2_tiles(
         Dates are aggregated from all source regions that touch each tile.
         Coordinate rings contain only (lon, lat) — no Z values.
     """
-    # ── 1. Build GeoDataFrame from the selected regions ────────────────────
     geom_rows = []
     for key in selected_keys:
         rd = regions_dict[key]
@@ -96,11 +99,9 @@ def resolve_s2_tiles(
 
     regions_gdf = gpd.GeoDataFrame(geom_rows, crs="EPSG:4326")
 
-    # ── 2. Load Sentinel-2 tile grid ───────────────────────────────────────
     if s2_grid_path is not None:
         grid_path = Path(__file__).parent / s2_grid_path
     else:
-        # Try defaults in order: parquet first (faster), then KML
         grid_path = next(
             (p for p in _DEFAULT_S2_GRIDS.values() if p.exists()),
             None
@@ -129,7 +130,6 @@ def resolve_s2_tiles(
     elif suffix == ".kml":
         s2_grid = _load_kml(grid_path)
     else:
-        # Fallback: any format geopandas supports (GeoJSON, Shapefile, GPKG, …)
         s2_grid = gpd.read_file(grid_path)
         print(f"    Loaded via geopandas ({len(s2_grid)} tiles)")
 
@@ -138,9 +138,8 @@ def resolve_s2_tiles(
     else:
         s2_grid = s2_grid.to_crs("EPSG:4326")
 
-    # ── 3. Pre-filter grid to bounding box of all regions (fast pre-filter) ─
     minx, miny, maxx, maxy = regions_gdf.total_bounds
-    margin = 0.5  # degrees — small padding to catch edge-touching tiles
+    margin = 0.5
     s2_local = s2_grid.cx[minx - margin : maxx + margin, miny - margin : maxy + margin].copy()
     print(f"  Pre-filtered to {len(s2_local)} candidate S2 tiles in bounding box")
 
@@ -148,7 +147,6 @@ def resolve_s2_tiles(
         print("  WARNING: No Sentinel-2 tiles found in the bounding box of the selected regions.")
         return {}, {}, {}
 
-    # ── 4. Spatial join: which tiles intersect any selected region? ─────────
     joined = gpd.sjoin(
         s2_local,
         regions_gdf[["geometry", "start_dates", "end_dates"]],
@@ -160,24 +158,18 @@ def resolve_s2_tiles(
         print("  WARNING: No Sentinel-2 tiles intersect the selected regions.")
         return {}, {}, {}
 
-    # ── 4b. Optional: keep only first match per source region ───────────────
     if keep_first_match_only:
         print("  Filtering to first match only (one tile per source region)...")
         joined = joined.groupby("index_right").first()
         joined.reset_index(inplace=True)
 
-    # ── 5. Auto-detect the MGRS tile name column ───────────────────────────
     tile_col = _find_tile_name_column(s2_local)
     print(f"  Tile name column: '{tile_col}'")
 
-    # ── 6. Build output: one entry per unique intersecting tile ────────────
-    # Each tile is clipped to the convex hull of all source regions touching it,
-    # so only the relevant area within the tile is retained.
     out             = {}
     start_dates_out = {}
     end_dates_out   = {}
 
-    # Set of tile names confirmed to intersect at least one selected region
     matched_tile_names = set(joined[tile_col].astype(str).unique())
 
     for _, tile_row in s2_local.iterrows():
@@ -189,7 +181,6 @@ def resolve_s2_tiles(
         if tile_geom is None or tile_geom.is_empty:
             continue
 
-        # ── Clip tile to convex hull of all source regions touching this tile ──
         touching = joined[joined[tile_col].astype(str) == tile_name]
         touching_region_indices = (
             touching["index_right"].values
@@ -204,36 +195,10 @@ def resolve_s2_tiles(
             convex_hull = unary_union(touching_region_geoms).convex_hull
             tile_geom = tile_geom.intersection(convex_hull)
 
-            # Alternative (use actual region shapes instead of convex hull):
-            # clip_geom = unary_union(touching_region_geoms).buffer(1e-6)
-            # tile_geom = tile_geom.intersection(clip_geom)
-
             if tile_geom is None or tile_geom.is_empty:
                 print(f"  Skipping tile {tile_name}: empty after clipping to convex hull")
                 continue
 
-        # ── Extract exterior ring — 2D only (lon, lat), no Z ──────────────
-        if tile_geom.geom_type == "Polygon":
-            ring = [[pt[0], pt[1]] for pt in tile_geom.exterior.coords]
-        elif tile_geom.geom_type == "MultiPolygon":
-            # Use the largest sub-polygon
-            largest = max(tile_geom.geoms, key=lambda p: p.area)
-            ring = [[pt[0], pt[1]] for pt in largest.exterior.coords]
-        else:
-            print(f"  Skipping tile {tile_name}: unexpected geometry type "
-                  f"{tile_geom.geom_type} after clipping")
-            continue
-
-        if ring[0] != ring[-1]:
-            ring.append(ring[0])
-
-        region_name = f"tile_{tile_name}"
-        out[region_name] = {
-            "type": "Polygon",
-            "coordinates": [ring],
-        }
-
-        # Aggregate dates from every source region that touches this tile
         all_start, all_end = [], []
         for _, mr in touching.iterrows():
             sd = mr.get("start_dates_right", mr.get("start_dates", [])) or []
@@ -241,19 +206,105 @@ def resolve_s2_tiles(
             all_start.extend(sd)
             all_end.extend(ed)
 
-        start_dates_out[region_name] = sorted(set(all_start)) if all_start else []
-        end_dates_out[region_name]   = sorted(set(all_end))   if all_end   else []
+        agg_start = sorted(set(all_start)) if all_start else []
+        agg_end   = sorted(set(all_end))   if all_end   else []
+
+        if subdivide:
+            sub_out, sub_sd, sub_ed = _subdivide_tile(
+                tile_name=tile_name,
+                tile_geom=tile_geom,
+                regions_gdf=regions_gdf,
+                touching_region_indices=touching_region_indices,
+                start_dates=agg_start,
+                end_dates=agg_end,
+            )
+            out.update(sub_out)
+            start_dates_out.update(sub_sd)
+            end_dates_out.update(sub_ed)
+        else:
+            if tile_geom.geom_type == "Polygon":
+                ring = [[pt[0], pt[1]] for pt in tile_geom.exterior.coords]
+            elif tile_geom.geom_type == "MultiPolygon":
+                largest = max(tile_geom.geoms, key=lambda p: p.area)
+                ring = [[pt[0], pt[1]] for pt in largest.exterior.coords]
+            else:
+                print(f"  Skipping tile {tile_name}: unexpected geometry type "
+                      f"{tile_geom.geom_type} after clipping")
+                continue
+
+            if ring[0] != ring[-1]:
+                ring.append(ring[0])
+
+            region_name = f"tile_{tile_name}"
+            out[region_name] = {"type": "Polygon", "coordinates": [ring]}
+            start_dates_out[region_name] = agg_start
+            end_dates_out[region_name]   = agg_end
 
     print(f"  Resolved {len(out)} Sentinel-2 tile(s) covering {len(selected_keys)} selected region(s)")
     return out, start_dates_out, end_dates_out
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Grid loaders
-# ─────────────────────────────────────────────────────────────────────────────
+def _subdivide_tile(
+    tile_name: str,
+    tile_geom,
+    regions_gdf: gpd.GeoDataFrame,
+    touching_region_indices,
+    start_dates: list,
+    end_dates: list,
+) -> Tuple[Dict, Dict, Dict]:
+    from shapely.geometry import box
+
+    minx, miny, maxx, maxy = tile_geom.bounds
+    midx = (minx + maxx) / 2
+    midy = (miny + maxy) / 2
+
+    quadrants = {
+        "NW": box(minx, midy, midx, maxy),
+        "NE": box(midx, midy, maxx, maxy),
+        "SW": box(minx, miny, midx, midy),
+        "SE": box(midx, miny, maxx, midy),
+    }
+
+    touching_geoms = regions_gdf.loc[
+        regions_gdf.index.isin(touching_region_indices), "geometry"
+    ].tolist()
+    regions_union = unary_union(touching_geoms) if touching_geoms else None
+
+    out, start_dates_out, end_dates_out = {}, {}, {}
+
+    for label, quad_box in quadrants.items():
+        sub_geom = tile_geom.intersection(quad_box)
+        if sub_geom is None or sub_geom.is_empty:
+            continue
+
+        if regions_union is not None and not sub_geom.intersects(regions_union):
+            continue
+
+        if regions_union is not None:
+            sub_geom = sub_geom.intersection(regions_union.convex_hull)
+            if sub_geom is None or sub_geom.is_empty:
+                continue
+
+        if sub_geom.geom_type == "Polygon":
+            ring = [[pt[0], pt[1]] for pt in sub_geom.exterior.coords]
+        elif sub_geom.geom_type == "MultiPolygon":
+            largest = max(sub_geom.geoms, key=lambda p: p.area)
+            ring = [[pt[0], pt[1]] for pt in largest.exterior.coords]
+        else:
+            continue
+
+        if ring[0] != ring[-1]:
+            ring.append(ring[0])
+
+        sub_name = f"tile_{tile_name}_{label}"
+        out[sub_name] = {"type": "Polygon", "coordinates": [ring]}
+        start_dates_out[sub_name] = start_dates
+        end_dates_out[sub_name]   = end_dates
+
+    return out, start_dates_out, end_dates_out
+
 
 def _load_parquet(parquet_path: Path) -> gpd.GeoDataFrame:
-    """Load a sentinel-2-grid.parquet file (WKB-encoded geometry column)."""
     import pandas as pd
     df = pd.read_parquet(parquet_path)
     gdf = gpd.GeoDataFrame(
@@ -266,33 +317,11 @@ def _load_parquet(parquet_path: Path) -> gpd.GeoDataFrame:
 
 
 def _load_kml(kml_path: Path) -> gpd.GeoDataFrame:
-    """
-    Load an ESA Sentinel-2 KML tile grid using only xml.etree (no fiona/KML driver).
-
-    The ESA KML structure per Placemark:
-
-        <Placemark>
-            <name>18TXR</name>
-            <MultiGeometry>
-                <Polygon>
-                    <outerBoundaryIs><LinearRing>
-                        <coordinates>lon,lat,z lon,lat,z ...</coordinates>
-                    </LinearRing></outerBoundaryIs>
-                </Polygon>
-                ...   (tiles crossing the antimeridian have 2 Polygons)
-            </MultiGeometry>
-        </Placemark>
-
-    Z values are dropped (lon, lat only), matching LeafWrapper's drop_z behaviour.
-    Multi-polygon tiles (antimeridian-crossing) are kept as MultiPolygon — the
-    spatial join in resolve_s2_tiles handles them correctly via geopandas.
-    """
     import xml.etree.ElementTree as ET
     from shapely.geometry import Polygon as ShapelyPolygon, MultiPolygon
 
     KML_NS = "http://www.opengis.net/kml/2.2"
 
-    # Pre-build qualified tag strings once rather than repeating f-strings
     placemark_tag = f"{{{KML_NS}}}Placemark"
     name_tag      = f"{{{KML_NS}}}name"
     polygon_tag   = f"{{{KML_NS}}}Polygon"
@@ -301,11 +330,6 @@ def _load_kml(kml_path: Path) -> gpd.GeoDataFrame:
     coords_tag    = f"{{{KML_NS}}}coordinates"
 
     def _parse_coords(coord_text: str):
-        """
-        Parse a KML <coordinates> text block → list of (lon, lat) tuples.
-        KML triples are whitespace-separated: 'lon,lat,z lon,lat,z ...'
-        Z is silently dropped — matches LeafWrapper's drop_z behaviour.
-        """
         pts = []
         for token in coord_text.split():
             token = token.strip()
@@ -324,13 +348,11 @@ def _load_kml(kml_path: Path) -> gpd.GeoDataFrame:
 
     rows = []
     for pm in root.iter(placemark_tag):
-        # ── Tile ID from <name> ────────────────────────────────────────────
         name_el = pm.find(name_tag)
         tile_id = name_el.text.strip() if (name_el is not None and name_el.text) else None
         if not tile_id:
             continue
 
-        # ── Collect all <Polygon> rings inside this Placemark ──────────────
         polys = []
         for poly_el in pm.iter(polygon_tag):
             outer = poly_el.find(outer_tag)
@@ -347,20 +369,18 @@ def _load_kml(kml_path: Path) -> gpd.GeoDataFrame:
             if len(pts) < 3:
                 continue
 
-            # Close the ring if needed 
             if pts[0] != pts[-1]:
                 pts.append(pts[0])
 
             poly = ShapelyPolygon(pts)
             if not poly.is_valid:
-                poly = poly.buffer(0) 
+                poly = poly.buffer(0)
             if not poly.is_empty:
                 polys.append(poly)
 
         if not polys:
             continue
 
-        # Single polygon → Polygon; two polygons (antimeridian) → MultiPolygon
         geom = polys[0] if len(polys) == 1 else MultiPolygon(polys)
         rows.append({"Name": tile_id, "geometry": geom})
 
@@ -375,15 +395,7 @@ def _load_kml(kml_path: Path) -> gpd.GeoDataFrame:
     return gdf
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _find_tile_name_column(gdf: gpd.GeoDataFrame) -> str:
-    """Auto-detect the column containing the MGRS tile name in the S2 grid GeoDataFrame."""
-    # Ordered preference list of known column names across common S2 grid sources.
-    # "Name" is first because that is what _load_kml produces and what the ESA KML
-    # uses natively via fiona as well.
     candidates = [
         "Name", "name", "TILE", "tile", "TILE_ID", "tile_id",
         "id", "ID", "mgrs", "MGRS", "tileid",
@@ -392,7 +404,6 @@ def _find_tile_name_column(gdf: gpd.GeoDataFrame) -> str:
         if c in gdf.columns:
             return c
 
-    # Fallback: first non-geometry string column
     for c in gdf.columns:
         if c == "geometry":
             continue

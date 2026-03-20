@@ -324,3 +324,194 @@ def search_STAC_Catalog(inParams, MaxImgs):
 
 ## Line 961 (different warning message)
     print('\n<get_time_window> one of required keys is not exist to form time.')
+
+
+
+
+# eoMosaic
+
+## changed export mosaic changed to export geotiff and theres a export mosaic function that chooses between them
+
+def export_mosaic(inParams, inMosaic):
+  '''Dispatcher: routes to export_geotiff() or export_csv() based on inParams["output_type"].'''
+  output_type = str(inParams.get('output_type', 'geotiff')).lower()
+  if output_type == 'csv':
+    export_csv(inParams, inMosaic)
+  else:
+    export_geotiff(inParams, inMosaic)
+
+
+
+
+def export_csv(inParams, inMosaic):
+  '''
+  Samples every pixel of an xarray mosaic and writes the result as a CSV file.
+
+  Args:
+    inParams (dict): Standardised parameter dictionary (must contain output_type, csv_scale,
+                     csv_dropNulls, csv_max_pixels, out_folder, current_region, time_str,
+                     projection, and SsrData keys).
+    inMosaic (xr.Dataset): The computed mosaic dataset returned by one_mosaic().
+  '''
+  import pandas as pd
+  import pyproj
+
+  print('\n<export_csv> Sampling mosaic pixels and building CSV table...')
+
+  # ---- 1. Collect band names to export (exclude internal helper bands) ----
+  skip_bands = {'spatial_ref'}   # skip non-data coordinate variables
+  band_names = [v for v in inMosaic.data_vars if v not in skip_bands]
+
+  # ---- 2. Stack (y, x) into a flat 'pixel' dimension --------------------
+  #         This mirrors what GEE does when it flattens an image to a FeatureCollection.
+  stacked = inMosaic[band_names].stack(pixel=('y', 'x'))   # shape: (band, n_pixels)
+
+  # ---- 3. Build a raw DataFrame ------------------------------------------
+  data = {band: stacked[band].values for band in band_names}
+  df   = pd.DataFrame(data)
+
+  # ---- 4. dropNulls — mirror GEE ee.Image.sample(dropNulls=True) --------
+  #         Drop any row where at least one band is NaN or equals the nodata sentinel (-10 000).
+  if inParams.get('csv_dropNulls', True):
+    nodata      = -10_000.0
+    valid_mask  = df.notna().all(axis=1) & (df != nodata).all(axis=1)
+    df          = df[valid_mask].reset_index(drop=True)
+
+    # Also filter the pixel coordinate index to match
+    pixel_index = stacked.coords['pixel'].values  # array of (y, x) tuples
+    pixel_index = pixel_index[valid_mask.values if hasattr(valid_mask, 'values') else valid_mask]
+  else:
+    pixel_index = stacked.coords['pixel'].values
+
+  print(f'<export_csv> Valid pixels after dropNulls filter: {len(df):,}')
+
+  # ---- 5. Cap rows to csv_max_pixels (memory / file-size safety) ---------
+  max_px = int(inParams.get('csv_max_pixels', 1_000_000))
+  if len(df) > max_px:
+    print(f'<export_csv> Capping output to {max_px:,} pixels (csv_max_pixels limit).')
+    df          = df.iloc[:max_px].reset_index(drop=True)
+    pixel_index = pixel_index[:max_px]
+
+  # ---- 6. Reproject pixel centres to WGS-84 longitude / latitude ---------
+  #         Mirrors GEE FeatureCollection geometry properties (.geo column).
+  proj_str  = inParams.get('projection', 'EPSG:3979')
+  src_crs   = pyproj.CRS.from_string(proj_str)
+  dst_crs   = pyproj.CRS.from_epsg(4326)           # WGS-84
+  transformer = pyproj.Transformer.from_crs(src_crs, dst_crs, always_xy=True)
+
+  ys = np.array([pt[0] for pt in pixel_index], dtype=float)  # native y coord
+  xs = np.array([pt[1] for pt in pixel_index], dtype=float)  # native x coord
+
+  lons, lats = transformer.transform(xs, ys)
+  df.insert(0, 'latitude',  lats)
+  df.insert(0, 'longitude', lons)
+
+  # ---- 7. Attach metadata columns (mirrors GEE system:time_start property) ----
+  df['time_str'] = inParams.get('time_str',       '')
+  df['region']   = inParams.get('current_region', '')
+
+  # ---- 8. Scale band columns back to physical units ----------------------
+  #         export_mosaic multiplies by 100 before writing int16 GeoTIFFs;
+  #         here we keep float values but apply the same ×100 convention so
+  #         numeric values are consistent between GeoTIFF and CSV outputs.
+  scale_factor = 100.0
+  ass_bands    = {eoIM.pix_sensor, eoIM.pix_date, 'scl', 'Fmask'}
+  for b in band_names:
+    if b not in ass_bands and b in df.columns:
+      df[b] = df[b] * scale_factor
+
+  # ---- 9. Build output path and write ------------------------------------
+  SsrData    = eoIM.SSR_META_DICT[str(inParams['sensor'])]
+  region_str = str(inParams.get('current_region', 'region'))
+  period_str = str(inParams.get('time_str',        'period'))
+  spa_scale  = inParams.get('csv_scale', inParams.get('resolution', 30))
+
+  dir_path = inParams['out_folder']
+  os.makedirs(dir_path, exist_ok=True)
+
+  filename    = f"{SsrData['NAME']}_{region_str}_{period_str}_{spa_scale}m.csv"
+  output_path = os.path.join(dir_path, filename)
+
+  df.to_csv(output_path, index=False)
+  print(f'<export_csv> CSV written → {output_path}  ({len(df):,} rows, {len(df.columns)} columns)')
+
+
+#############################################################################################################
+# Description: This function exports the band images of a mosaic into separate GeoTiff files
+#
+# Revision history:  2024-May-24  Lixin Sun  Initial creation
+#                    2024-Dec-04  Marjan Asgari Add .compute() on the mosaic before saving it to tiff files
+#############################################################################################################
+def export_geotiff(inParams, inMosaic):
+  '''
+    This function exports the band images of a mosaic into separate GeoTiff files.
+
+    Args:
+      inParams(dictionary): A dictionary containing all required execution parameters;
+      inMosaic(xrDS): A xarray dataset object containing mosaic images to be exported.'''
+  
+  #==========================================================================================================
+  # Convert float pixel values to integers and then reproject the mosaic image
+  #==========================================================================================================
+  if '16' in inParams['out_datatype']:
+    mosaic_int = (inMosaic * 100.0).astype(np.int16)
+  else:  
+    mosaic_int = (inMosaic).astype(np.int8)   # For testing integer value band images
+
+  rio_mosaic = mosaic_int.rio.write_crs(inParams['projection'], inplace=True)  # Assuming WGS84 for this example
+
+  #==========================================================================================================
+  # Create a directory to store the output files
+  #==========================================================================================================
+  dir_path = inParams['out_folder']
+  os.makedirs(dir_path, exist_ok=True)
+
+  #==========================================================================================================
+  # Create prefix filename
+  #==========================================================================================================
+  SsrData    = eoIM.SSR_META_DICT[str(inParams['sensor'])]   
+  region_str = str(inParams['current_region'])
+  period_str = str(inParams['time_str'])
+ 
+  filePrefix = f"{SsrData['NAME']}_{region_str}_{period_str}"
+
+  #==========================================================================================================
+  # Create individual sub-mosaic and combine it into base image based on score
+  #==========================================================================================================  
+  spa_scale    = inParams['resolution']
+  export_style = str(inParams['export_style']).lower()
+  ext_saved    = []
+  ass_bands    = [eoIM.pix_sensor, eoIM.pix_date, 'scl', 'Fmask'] 
+  if 'sepa' in export_style:
+    #out_bands = rio_mosaic.data_vars if spa_scale > 15 else ['blue', 'green', 'red', 'nir08', 'score', 'date']
+    out_bands = rio_mosaic.data_vars
+    if 'bands' in inParams:
+      for band in inParams["bands"]:
+        if band.lower() not in [b.lower() for b in out_bands]: 
+          out_bands.append(band)
+    
+    out_bands = list(set(band for band in out_bands))
+    for band in out_bands:
+      out_img = rio_mosaic[band]
+      out_img = out_img.where(out_img > 0, 0)   # Force negative values to ZERO
+
+      # Specially deal with associated bands
+      if band in ass_bands:
+        out_img = out_img / 100   # For associated bands, restore their original values (do not multiply 100)
+        if band == eoIM.pix_sensor or band == 'scl' or band == 'Fmask':
+          out_img = out_img.astype(np.uint8)   
+        else:
+          out_img = out_img.astype(np.int16)  
+
+      filename    = f"{filePrefix}_{band}_{spa_scale}m.tif"
+      output_path = os.path.join(dir_path, filename)
+
+      out_img.rio.to_raster(output_path)
+
+  else:
+    filename = f"{filePrefix}_mosaic_{spa_scale}m.tif"
+    output_path = os.path.join(dir_path, filename)
+    rio_mosaic.to_netcdf(output_path)
+    ext_saved.append("mosaic")
+  
+  #return ext_saved, period_str

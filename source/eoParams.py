@@ -51,7 +51,12 @@ all_param_keys = ['sensor', 'ID', 'unit', 'bands', 'year', 'nbYears', 'months', 
                   'out_location', 'resolution', 'GCS_bucket', 'out_folder', 'export_style', 'out_datatype', 'projection', 'CloudScore',
                   'monthly', 'start_dates', 'end_dates', 'regions', 'scene_ID', 'current_time', 'current_region', 
                   'time_str','cloud_cover', 'SsrData', 'Criteria', 'IncludeAngles', 'debug', 'entire_tile',
-                  'nodes', 'node_memory', 'number_workers', 'worker_threads', 'chunk_size', 'account', 'standardized', 'region_start_dates', 'region_end_dates']
+                  'nodes', 'node_memory', 'number_workers', 'worker_threads', 'chunk_size', 'account', 'standardized', 'region_start_dates', 'region_end_dates',
+                  'output_type',    # 'geotiff' (default) or 'csv'
+                  'csv_scale',      # sampling scale in metres for CSV (defaults to 'resolution')
+                  'csv_dropNulls',  # drop masked/null pixels in CSV (default True, mirrors GEE dropNulls)
+                  'csv_max_pixels', # max pixels written to CSV (default 1_000_000)
+                  ]
 
 
 
@@ -596,7 +601,41 @@ def valid_ProdParams(UserParams):
   sensor_type = outParams['sensor'].lower()
   if sensor_type.find('s2') < 0:
     outParams['CloudScore'] = False 
-  
+
+  # ---- output_type -------------------------------------------------------
+  # Mirrors GEE: Export.image (geotiff) vs ee.Image.sample + Export.table (csv)
+  if 'output_type' not in outParams:
+    outParams['output_type'] = 'geotiff'
+  else:
+    ot = str(outParams['output_type']).lower()
+    if ot not in ['geotiff', 'csv']:
+      print('<valid_user_params> Invalid output_type; defaulting to "geotiff". Valid: "geotiff", "csv".')
+      outParams['output_type'] = 'geotiff'
+    else:
+      outParams['output_type'] = ot
+
+  # ---- csv_scale ---------------------------------------------------------
+  # Mirrors GEE ee.Image.sample(scale=...) — the pixel grid used for sampling.
+  if 'csv_scale' not in outParams:
+    outParams['csv_scale'] = outParams['resolution']
+  else:
+    if int(outParams['csv_scale']) < 1:
+      outParams['csv_scale'] = outParams['resolution']
+
+  # ---- csv_dropNulls -----------------------------------------------------
+  # Mirrors GEE ee.Image.sample(dropNulls=True) — skip pixels where any band is NaN/masked.
+  if 'csv_dropNulls' not in outParams:
+    outParams['csv_dropNulls'] = True
+  elif not isinstance(outParams['csv_dropNulls'], bool):
+    outParams['csv_dropNulls'] = True
+
+  # ---- csv_max_pixels ----------------------------------------------------
+  # Safety cap on CSV row count (~1 GB at float32 / 6 bands = ~1 M pixels).
+  if 'csv_max_pixels' not in outParams:
+    outParams['csv_max_pixels'] = 1_000_000
+  else:
+    outParams['csv_max_pixels'] = max(1, int(outParams['csv_max_pixels']))
+
   return all_valid, outParams
 
 
@@ -1161,6 +1200,15 @@ def cmd_arguments(argv=None):
     default=None,
     help="The STAC Catalog Json file for the desired Region of interest. "
   )
+  parser.add_argument('-ot', '--output_type', type=str, default='geotiff',
+      choices=['geotiff', 'csv'],
+      help="Output format: 'geotiff' (default) or 'csv' (samples pixels, like GEE ee.Image.sample + Export.table)")
+  parser.add_argument('-cs', '--csv_scale', type=int, default=None,
+      help="Pixel sampling scale in metres for CSV export (default: same as --resolution)")
+  parser.add_argument('--csv_dropNulls', action='store_true', default=True,
+      help="Drop masked/NaN pixels from CSV output (mirrors GEE dropNulls=True)")
+  parser.add_argument('--csv_max_pixels', type=int, default=1_000_000,
+      help="Maximum number of pixels to write to CSV (default: 1 000 000)")
 
   args = parser.parse_args()
   
@@ -1230,6 +1278,10 @@ def cmd_arguments(argv=None):
       "out_folder" : out_folder,
       "projection" : projection,
       "IncludeAngles" : IncludeAngles,
+      "output_type"   : args.output_type,
+      "csv_scale"     : args.csv_scale if args.csv_scale is not None else resolution,
+      "csv_dropNulls" : args.csv_dropNulls,
+      "csv_max_pixels": args.csv_max_pixels,
   }
   if 'end_dates' != "":
       prod_params["end_dates"] = end_dates

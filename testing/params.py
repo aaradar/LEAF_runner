@@ -261,11 +261,14 @@ CompParams = {
 # for 50 regions at 30m res with 10 workers and 50GB memory per worker
 
 #1000 regions at 30m HLS_SR afforestation
-# 1:52pm to 6:40 am + 9:19am to 9:04pm = 16 hours and 52 minutes 
+# 1:52pm to 6:40 am + 9:19am to 9:04pm = 28h 33 mins
 # for 1000 regions at 30m res with 10 workers and 50GB memory per worker
 
 # 50 regions with tiles
 # 7:30 am to 8:32 am = 1 hour and 2 minutes
 
 # 1000 regions with tiles
-# 8:35 am
+# 8:35 am - 5:40 pm = 8 hours and 5 minutes
+
+# 1000 csv regins 10m
+# 2:03 pm to 4:25 am = 14 hours and 22 minutes

@@ -1,6 +1,6 @@
 # Parameter Preparation System - README
 
-# add S2A_OPER_GIP_TILPAR_MPC.kml from HLS MGRS (file size too large)
+# add S2A_OPER_GIP_TILPAR_MPC from HLS MGRS (file size too large)
 ## Installation
 
 **Step 0: Create and activate a Conda environment**

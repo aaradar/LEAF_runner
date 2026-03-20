@@ -270,7 +270,8 @@ def main(inProdParams, inCompParams):
     "num_years",
     "file_variables",
     "mode",
-    "s2_grid_path"
+    "s2_grid_path",
+    "subdivide_tiles"
   }
 
   for key in list(inProdParams.keys()):
