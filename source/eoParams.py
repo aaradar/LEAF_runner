@@ -56,6 +56,8 @@ all_param_keys = ['sensor', 'ID', 'unit', 'bands', 'year', 'nbYears', 'months', 
                   'csv_scale',      # sampling scale in metres for CSV (defaults to 'resolution')
                   'csv_dropNulls',  # drop masked/null pixels in CSV (default True, mirrors GEE dropNulls)
                   'csv_max_pixels', # max pixels written to CSV (default 1_000_000)
+                  'regions_ref', #references to regions incase of tiles
+                  'mode' # "tiles" or "regions" (default) to determine how to handle spatial regions during exporting
                   ]
 
 

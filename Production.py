@@ -269,7 +269,6 @@ def main(inProdParams, inCompParams):
     "temporal_buffer",
     "num_years",
     "file_variables",
-    "mode",
     "s2_grid_path",
     "subdivide_tiles"
   }

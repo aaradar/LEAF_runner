@@ -270,5 +270,40 @@ CompParams = {
 # 1000 regions with tiles
 # 8:35 am - 5:40 pm = 8 hours and 5 minutes
 
-# 1000 csv regins 10m
+# 1000 csv regions 10m
 # 2:03 pm to 4:25 am = 14 hours and 22 minutes
+
+
+# 8:30 am to 1:34 am = 17 hours and 4 minutes for 1000 regions at 10m res with 32 workers and 16GB memory per worker
+
+# split csv time
+# test geotiff in gee
+
+# two regions 3000 3001 csv file size 171 + 528 = 699 lines
+# clipped tile with region 3000 region 3001, is 698 lines make sense since titles come up once instead of twice FOR ONE FILE rather than two files
+
+
+
+# NaN values instead of 0 for rio clip
+
+import xarray as xrimport rioxarray # Load or create your DataArrayda = xr.open_dataset("your_file.nc").your_variable # 1. Define the nodata value (e.g., -9999)da.rio.write_nodata(-9999, inplace=True) # 2. Export to GeoTIFFda.rio.to_raster("output_with_nodata.tif")
+ 
+import xarray as xr
+
+import rioxarray
+ 
+# Load or create your DataArray
+
+da = xr.open_dataset("your_file.nc").your_variable
+ 
+# 1. Define the nodata value (e.g., -9999)
+
+da.rio.write_nodata(-9999, inplace=True)
+ 
+# 2. Export to GeoTIFF
+
+da.rio.to_raster("output_with_nodata.tif")
+ # use 255
+
+ #check delayed execution with rio
+ # move .compute to when you clip the mosaic

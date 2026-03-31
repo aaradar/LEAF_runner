@@ -279,7 +279,10 @@ def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
                 file_variables=ProdParams.get("file_variables", None)
             )
 
-             # ==================== HANDLE TILES MODE ====================
+            # ==================== HANDLE TILES MODE ====================
+            # Store original regions for reference before any tile conversion
+            ProdParams['regions_ref'] = copy.deepcopy(regions_dict)
+            
             # If mode="tiles", convert regions to Sentinel-2 tile footprints
             if ProdParams.get("mode") == "tiles":
                 print(f"<handle_regions_from_file> Resolving Sentinel-2 tiles...")
