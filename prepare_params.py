@@ -239,15 +239,12 @@ def validate_production_params(ProdParams: Dict[str, Any]) -> Tuple[bool, List[s
     return is_valid, errors
 
 
-#############################################################################################################
-# REGION HANDLING
-#############################################################################################################
 def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle KML or SHP file-based regions input.
     
     Converts file-based region definitions to LEAF-compatible region dictionary.
-    Applies temporal buffer to region-specific start and end dates if specified.  # ← UPDATED DOCSTRING
+    Applies temporal buffer to region-specific start and end dates if specified.
     
     Args:
         ProdParams: Production parameters dictionary
@@ -280,14 +277,15 @@ def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
             )
 
             # ==================== HANDLE TILES MODE ====================
-            # Store original regions for reference before any tile conversion
+            # Store original regions + raw dates for reference before any tile conversion
+            # (ref dates will have temporal processing applied in parallel below)
             ProdParams['regions_ref'] = copy.deepcopy(regions_dict)
-            
+            ref_start_dates = copy.deepcopy(region_start_dates)
+            ref_end_dates   = copy.deepcopy(region_end_dates)
+
             # If mode="tiles", convert regions to Sentinel-2 tile footprints
             if ProdParams.get("mode") == "tiles":
                 print(f"<handle_regions_from_file> Resolving Sentinel-2 tiles...")
-                # Note: regions_dict already has the start/end indices applied from regions_from_kml()
-                # So use all loaded regions, not the original indices again
                 selected_keys = sorted(regions_dict.keys())
                 
                 regions_dict, region_start_dates, region_end_dates = resolve_s2_tiles(
@@ -298,7 +296,6 @@ def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
                     subdivide=ProdParams.get("subdivide_tiles", False)
                 )
                 
-                # Update ProdParams with the tile-converted regions and dates
                 ProdParams["regions"] = regions_dict
                 ProdParams["region_start_dates"] = region_start_dates
                 ProdParams["region_end_dates"] = region_end_dates
@@ -312,7 +309,6 @@ def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
                 print("The processing pipeline will continue with an empty region set.")
                 print(f"{'='*80}\n")
                 
-                # Set empty region parameters and continue
                 ProdParams["regions"] = {}
                 ProdParams["region_start_dates"] = {}
                 ProdParams["region_end_dates"] = {}
@@ -322,156 +318,152 @@ def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
             # ==================== TEMPORAL BUFFER PROCESSING ====================
 
             # STEP 1: Handle single date case FIRST (auto-generate missing dates)
-            all_regions = set(regions_dict.keys())
+            # Apply to both live (tile-keyed) dates and ref (polygon-keyed) dates in parallel
+            for dates_dict_start, dates_dict_end, label in [
+                (region_start_dates, region_end_dates, "live"),
+                (ref_start_dates,    ref_end_dates,    "ref"),
+            ]:
+                source_keys = regions_dict.keys() if label == "live" else ProdParams['regions_ref'].keys()
+                for region_name in source_keys:
+                    has_start = region_name in dates_dict_start and dates_dict_start[region_name]
+                    has_end   = region_name in dates_dict_end   and dates_dict_end[region_name]
+                    
+                    if has_start and not has_end:
+                        dates_dict_end[region_name] = dates_dict_start[region_name].copy()
+                        print(f"<handle_regions_from_file> [{label}] Region {region_name}: Auto-generated end dates from start dates")
+                    elif has_end and not has_start:
+                        dates_dict_start[region_name] = dates_dict_end[region_name].copy()
+                        print(f"<handle_regions_from_file> [{label}] Region {region_name}: Auto-generated start dates from end dates")
 
-            for region_name in all_regions:
-                has_start = region_name in region_start_dates and region_start_dates[region_name]
-                has_end = region_name in region_end_dates and region_end_dates[region_name]
-                
-                if has_start and not has_end:
-                    # Only start date exists - copy to end
-                    region_end_dates[region_name] = region_start_dates[region_name].copy()
-                    print(f"<handle_regions_from_file> Region {region_name}: Auto-generated end dates from start dates")
-                elif has_end and not has_start:
-                    # Only end date exists - copy to start
-                    region_start_dates[region_name] = region_end_dates[region_name].copy()
-                    print(f"<handle_regions_from_file> Region {region_name}: Auto-generated start dates from end dates")
-
-            # STEP 2: Apply temporal buffer (now that all regions have both start and end dates)
+            # STEP 2: Apply temporal buffer in parallel to live and ref dates
             if 'temporal_buffer' in ProdParams:
                 buffer_list = ProdParams['temporal_buffer']
                 
-                # Determine if we're in override mode or offset mode
-                # Override mode: buffer_list contains pairs of date strings like [["2024-04-15", "2024-07-15"], ["2024-08-01", "2024-09-01"]]
-                # Offset mode: buffer_list contains pairs of day offsets like [[-5, 10], [-10, 15], [0, 30]]
-                
                 if buffer_list and len(buffer_list) > 0:
-                    # Check if first entry is a date string pair or numeric offset pair
                     first_entry = buffer_list[0] if isinstance(buffer_list[0], list) else buffer_list
                     is_override_mode = isinstance(first_entry[0], str)
                     
-                    # Normalize to list of pairs format
                     if not isinstance(buffer_list[0], list):
-                        # Single pair like [-5, 10] or ["2024-04-15", "2024-07-15"]
                         buffer_list = [buffer_list]
                     
-                    if is_override_mode:
-                        # OVERRIDE MODE: Replace all region dates with specified date pairs
-                        print(f"<handle_regions_from_file> Override mode: Setting all regions to {len(buffer_list)} date window(s)")
+                    def _apply_buffer(source_keys, start_dates, end_dates):
+                        """Apply temporal buffer (override or offset) to a set of date dicts."""
+                        new_start = {}
+                        new_end   = {}
                         
-                        new_start_dates = {}
-                        new_end_dates = {}
-                        
-                        for region_name in regions_dict.keys():
-                            new_start_dates[region_name] = [pair[0] for pair in buffer_list]
-                            new_end_dates[region_name] = [pair[1] for pair in buffer_list]
-                            print(f"<handle_regions_from_file> Region {region_name}: {len(buffer_list)} windows {buffer_list}")
-                        
-                        region_start_dates = new_start_dates
-                        region_end_dates = new_end_dates
-                    
-                    else:
-                        # OFFSET MODE: Apply each buffer pair to existing dates
-                        print(f"<handle_regions_from_file> Offset mode: Applying {len(buffer_list)} buffer(s) to multiply date windows")
-                        
-                        new_start_dates = {}
-                        new_end_dates = {}
-                        
-                        for region_name in regions_dict.keys():
-                            expanded_starts = []
-                            expanded_ends = []
-                            
-                            # Get original dates for this region
-                            orig_starts = region_start_dates.get(region_name, [])
-                            orig_ends = region_end_dates.get(region_name, [])
-                            
-                            # If no dates exist, skip this region
-                            if not orig_starts and not orig_ends:
-                                continue
-                            
-                            # For each original date pair
-                            for i in range(max(len(orig_starts), len(orig_ends))):
-                                orig_start = orig_starts[i] if i < len(orig_starts) else orig_ends[i]
-                                orig_end = orig_ends[i] if i < len(orig_ends) else orig_starts[i]
+                        if is_override_mode:
+                            for region_name in source_keys:
+                                new_start[region_name] = [pair[0] for pair in buffer_list]
+                                new_end[region_name]   = [pair[1] for pair in buffer_list]
+                                print(f"<handle_regions_from_file> Region {region_name}: {len(buffer_list)} windows {buffer_list}")
+                        else:
+                            for region_name in source_keys:
+                                expanded_starts = []
+                                expanded_ends   = []
                                 
-                                # Apply each buffer to this date pair
-                                for buffer_start, buffer_end in buffer_list:
-                                    buffered_start = apply_temporal_buffer_to_date(orig_start, buffer_start)
-                                    buffered_end = apply_temporal_buffer_to_date(orig_end, buffer_end)
-                                    expanded_starts.append(buffered_start)
-                                    expanded_ends.append(buffered_end)
-                            
-                            new_start_dates[region_name] = expanded_starts
-                            new_end_dates[region_name] = expanded_ends
-                            print(f"<handle_regions_from_file> Region {region_name}: Expanded from {max(len(orig_starts), len(orig_ends))} to {len(expanded_starts)} windows")
+                                orig_starts = start_dates.get(region_name, [])
+                                orig_ends   = end_dates.get(region_name, [])
+                                
+                                if not orig_starts and not orig_ends:
+                                    continue
+                                
+                                for i in range(max(len(orig_starts), len(orig_ends))):
+                                    orig_start = orig_starts[i] if i < len(orig_starts) else orig_ends[i]
+                                    orig_end   = orig_ends[i]   if i < len(orig_ends)   else orig_starts[i]
+                                    
+                                    for buffer_start, buffer_end in buffer_list:
+                                        expanded_starts.append(apply_temporal_buffer_to_date(orig_start, buffer_start))
+                                        expanded_ends.append(apply_temporal_buffer_to_date(orig_end,   buffer_end))
+                                
+                                new_start[region_name] = expanded_starts
+                                new_end[region_name]   = expanded_ends
+                                print(f"<handle_regions_from_file> Region {region_name}: Expanded from {max(len(orig_starts), len(orig_ends))} to {len(expanded_starts)} windows")
                         
-                        region_start_dates = new_start_dates
-                        region_end_dates = new_end_dates
+                        return new_start, new_end
 
-            # STEP 3: Expand region dates across multiple years if num_years is specified 
-            # (MOVED AFTER buffering so buffered dates get expanded across years)
+                    if is_override_mode:
+                        print(f"<handle_regions_from_file> Override mode: Setting all regions to {len(buffer_list)} date window(s)")
+                    else:
+                        print(f"<handle_regions_from_file> Offset mode: Applying {len(buffer_list)} buffer(s) to multiply date windows")
+
+                    # Live (tile-keyed) dates
+                    region_start_dates, region_end_dates = _apply_buffer(
+                        regions_dict.keys(), region_start_dates, region_end_dates
+                    )
+                    # Ref (polygon-keyed) dates — same logic, different key set
+                    ref_start_dates, ref_end_dates = _apply_buffer(
+                        ProdParams['regions_ref'].keys(), ref_start_dates, ref_end_dates
+                    )
+
+            # STEP 3: Expand across multiple years in parallel for live and ref dates
             if 'num_years' in ProdParams and ProdParams['num_years'] > 1:
                 num_years = ProdParams['num_years']
                 print(f"<handle_regions_from_file> Expanding region dates across {num_years} years...")
-                
-                expanded_start_dates = {}
-                expanded_end_dates = {}
-                
-                for region_name in all_regions:
-                    orig_starts = region_start_dates.get(region_name, [])
-                    orig_ends = region_end_dates.get(region_name, [])
+
+                def _apply_num_years(source_keys, start_dates, end_dates):
+                    """Expand date pairs across N years, return new start/end dicts."""
+                    expanded_start = {}
+                    expanded_end   = {}
                     
-                    if not orig_starts or not orig_ends:
-                        continue
-                    
-                    multi_year_starts = []
-                    multi_year_ends = []
-                    
-                    # For each original date pair (now potentially buffered)
-                    for orig_start, orig_end in zip(orig_starts, orig_ends):
-                        # Parse the dates
-                        start_dt = datetime.strptime(orig_start, '%Y-%m-%d')
-                        end_dt = datetime.strptime(orig_end, '%Y-%m-%d')
+                    for region_name in source_keys:
+                        orig_starts = start_dates.get(region_name, [])
+                        orig_ends   = end_dates.get(region_name, [])
                         
-                        # Generate dates for each year
-                        for year_offset in range(num_years):
-                            # Add years, handling leap year edge case
-                            try:
-                                new_start = start_dt.replace(year=start_dt.year + year_offset)
-                                new_end = end_dt.replace(year=end_dt.year + year_offset)
-                            except ValueError:
-                                # Handle Feb 29 in non-leap years → move to Feb 28
-                                if start_dt.month == 2 and start_dt.day == 29:
-                                    new_start = start_dt.replace(year=start_dt.year + year_offset, day=28)
-                                else:
-                                    new_start = start_dt.replace(year=start_dt.year + year_offset)
-                                
-                                if end_dt.month == 2 and end_dt.day == 29:
-                                    new_end = end_dt.replace(year=end_dt.year + year_offset, day=28)
-                                else:
-                                    new_end = end_dt.replace(year=end_dt.year + year_offset)
+                        if not orig_starts or not orig_ends:
+                            continue
+                        
+                        multi_year_starts = []
+                        multi_year_ends   = []
+                        
+                        for orig_start, orig_end in zip(orig_starts, orig_ends):
+                            start_dt = datetime.strptime(orig_start, '%Y-%m-%d')
+                            end_dt   = datetime.strptime(orig_end,   '%Y-%m-%d')
                             
-                            multi_year_starts.append(new_start.strftime('%Y-%m-%d'))
-                            multi_year_ends.append(new_end.strftime('%Y-%m-%d'))
+                            for year_offset in range(num_years):
+                                try:
+                                    new_start = start_dt.replace(year=start_dt.year + year_offset)
+                                    new_end   = end_dt.replace(year=end_dt.year   + year_offset)
+                                except ValueError:
+                                    new_start = start_dt.replace(year=start_dt.year + year_offset, day=28) \
+                                        if start_dt.month == 2 and start_dt.day == 29 \
+                                        else start_dt.replace(year=start_dt.year + year_offset)
+                                    new_end = end_dt.replace(year=end_dt.year + year_offset, day=28) \
+                                        if end_dt.month == 2 and end_dt.day == 29 \
+                                        else end_dt.replace(year=end_dt.year + year_offset)
+                                
+                                multi_year_starts.append(new_start.strftime('%Y-%m-%d'))
+                                multi_year_ends.append(new_end.strftime('%Y-%m-%d'))
+                        
+                        expanded_start[region_name] = multi_year_starts
+                        expanded_end[region_name]   = multi_year_ends
+                        print(f"<handle_regions_from_file> Region {region_name}: Expanded from {len(orig_starts)} to {len(multi_year_starts)} date windows ({num_years} years)")
                     
-                    expanded_start_dates[region_name] = multi_year_starts
-                    expanded_end_dates[region_name] = multi_year_ends
-                    print(f"<handle_regions_from_file> Region {region_name}: Expanded from {len(orig_starts)} to {len(multi_year_starts)} date windows ({num_years} years)")
-                
-                region_start_dates = expanded_start_dates
-                region_end_dates = expanded_end_dates
+                    return expanded_start, expanded_end
+
+                # Live (tile-keyed) dates
+                region_start_dates, region_end_dates = _apply_num_years(
+                    regions_dict.keys(), region_start_dates, region_end_dates, num_years
+                )
+                # Ref (polygon-keyed) dates
+                ref_start_dates, ref_end_dates = _apply_num_years(
+                    ProdParams['regions_ref'].keys(), ref_start_dates, ref_end_dates, num_years
+                )
 
             # ==================== END TEMPORAL BUFFER PROCESSING ====================
+
+            # Store fully-processed ref dates (polygon-keyed, mirrors regions_ref)
+            ProdParams['region_start_dates_ref'] = ref_start_dates
+            ProdParams['region_end_dates_ref']   = ref_end_dates
+
             ProdParams["regions"] = regions_dict
             ProdParams["region_start_dates"] = region_start_dates
-            ProdParams["region_end_dates"] = region_end_dates
+            ProdParams["region_end_dates"]   = region_end_dates
             
             print(f"<handle_regions_from_file> Loaded {len(ProdParams['regions'])} regions from file")
             
             return ProdParams
 
     except FileNotFoundError as e:
-        # Re-raise with better error message
         print(f"\n{'='*80}")
         print("ERROR: Region file not found")
         print('='*80)
@@ -480,7 +472,6 @@ def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
         raise
         
     except (AttributeError, TypeError) as e:
-        # regions is None or not a string — skip silently
         print(f"<handle_regions_from_file> No file-based regions to process: {e}")
         pass
 

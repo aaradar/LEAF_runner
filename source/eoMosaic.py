@@ -1804,48 +1804,42 @@ mode = 'regions'  (or key absent)
 
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPER
-# ─────────────────────────────────────────────────────────────────────────────
+############################################### exporting #############################################
 
 def _clip_mosaic_to_regions(inParams, mosaic):
     """Return a copy of *mosaic* clipped to the relevant region polygon(s).
-
-    Parameters
-    ----------
-    inParams : dict
-        Standardised parameter dictionary.  Keys consulted:
-          'mode'          – 'tiles' | 'regions'  (default 'regions')
-          'regions_ref'   – {name: GeoJSON-Polygon, ...}
-          'current_region'– name of the active region (used when mode='regions')
-          'projection'    – CRS string of the mosaic (e.g. 'EPSG:3979')
-    mosaic : xr.Dataset
-        The computed mosaic **before** any integer conversion.
-
-    Returns
-    -------
-    xr.Dataset
-        Mosaic clipped (masked) to the union of the relevant polygons.
-        If no valid regions_ref is found the original mosaic is returned
-        unchanged so existing behaviour is preserved.
+    If a clip_geom is passed directly in inParams['_clip_geom'] (projected), use it.
+    Otherwise fall back to the original region-lookup logic.
     """
+    # Fast path: caller already prepared a projected geometry
+    if '_clip_geom' in inParams:
+        clip_geom = inParams['_clip_geom']
+        proj_str  = inParams.get('projection', 'EPSG:3979')
+        try:
+            clipped = (
+                mosaic
+                .rio.write_crs(proj_str, inplace=False)
+                .rio.clip([mapping(clip_geom)], crs=proj_str, drop=True, all_touched=True)
+            )
+            print(f'<_clip_mosaic_to_regions> Clipped mosaic → {clipped.sizes}')
+            return clipped
+        except Exception as exc:
+            print(f'<_clip_mosaic_to_regions> WARNING: clip failed ({exc}); returning unclipped mosaic.')
+            return mosaic
+
     regions_ref = inParams.get('regions_ref', {})
     if not regions_ref:
-        return mosaic  # nothing to clip against → original behaviour
+        return mosaic
 
     mode = str(inParams.get('mode', 'regions')).lower()
 
-    # ── collect the polygon(s) we want to keep ────────────────────────────
     if mode == 'tiles':
-        # Union of ALL polygons in regions_ref
         polys = [shape(geom) for geom in regions_ref.values()]
     else:
-        # Only the polygon that matches the current processing region
         current = inParams.get('current_region', '')
         if current in regions_ref:
             polys = [shape(regions_ref[current])]
         else:
-            # current_region not found in regions_ref → no clipping
             return mosaic
 
     if not polys:
@@ -1853,21 +1847,17 @@ def _clip_mosaic_to_regions(inParams, mosaic):
 
     clip_geom = unary_union(polys)
 
-    # ── reproject clip geometry from WGS-84 to the mosaic CRS ────────────
     import pyproj
     from shapely.ops import transform as shp_transform
 
     proj_str = inParams.get('projection', 'EPSG:3979')
-    src_crs  = pyproj.CRS.from_epsg(4326)          # regions_ref is always lon/lat
+    src_crs  = pyproj.CRS.from_epsg(4326)
     dst_crs  = pyproj.CRS.from_string(proj_str)
 
     if not src_crs.equals(dst_crs):
-        transformer = pyproj.Transformer.from_crs(
-            src_crs, dst_crs, always_xy=True
-        )
-        clip_geom = shp_transform(transformer.transform, clip_geom)
+        transformer = pyproj.Transformer.from_crs(src_crs, dst_crs, always_xy=True)
+        clip_geom   = shp_transform(transformer.transform, clip_geom)
 
-    # ── apply clip using rioxarray ────────────────────────────────────────
     try:
         clipped = (
             mosaic
@@ -1880,32 +1870,110 @@ def _clip_mosaic_to_regions(inParams, mosaic):
         )
         return clipped
     except Exception as exc:
-        print(f'<_clip_mosaic_to_regions> WARNING: clip failed ({exc}); '
-              'returning unclipped mosaic.')
+        print(f'<_clip_mosaic_to_regions> WARNING: clip failed ({exc}); returning unclipped mosaic.')
         return mosaic
 
-#############################################################################################################
-# Description: This function exports the band images of a mosaic into separate GeoTiff files
-#
-# Revision history:  2024-May-24  Lixin Sun  Initial creation
-#                    2024-Dec-04  Marjan Asgari Add .compute() on the mosaic before saving it to tiff files
-#############################################################################################################
+
+def _get_tile_regions(inParams, inMosaic=None):
+    """Return a filtered dict of {region_name: projected_shapely_geom} for the current tile.
+    Filters by:
+      1. Date window match (if region_start/end_dates_ref provided)
+      2. Spatial intersection with the mosaic bounds (if inMosaic provided)
+    """
+    if str(inParams.get('mode', 'regions')).lower() != 'tiles':
+        return {}
+
+    regions_ref = inParams.get('regions_ref', {})
+    if not regions_ref:
+        return {}
+
+    # Current tile time window
+    start_dates = inParams.get('start_dates', [])
+    end_dates   = inParams.get('end_dates',   [])
+    cur_time    = inParams.get('current_time', 0)
+    _ts = start_dates[cur_time] if cur_time < len(start_dates) else ''
+    _te = end_dates[cur_time]   if cur_time < len(end_dates)   else ''
+    tile_start = str(_ts[0]) if isinstance(_ts, list) else str(_ts)
+    tile_end   = str(_te[0]) if isinstance(_te, list) else str(_te)
+
+    start_ref = inParams.get('region_start_dates_ref', {})
+    end_ref   = inParams.get('region_end_dates_ref',   {})
+    has_date_refs = bool(start_ref) and bool(end_ref)
+
+    import pyproj
+    from shapely.ops import transform as shp_transform
+    from shapely.geometry import box as shapely_box
+
+    proj_str       = inParams.get('projection', 'EPSG:3979')
+    src_crs        = pyproj.CRS.from_epsg(4326)
+    dst_crs        = pyproj.CRS.from_string(proj_str)
+    need_reproject = not src_crs.equals(dst_crs)
+
+    if need_reproject:
+        transformer = pyproj.Transformer.from_crs(src_crs, dst_crs, always_xy=True)
+
+    # Build mosaic bounding box in projected CRS for spatial pre-filter
+    mosaic_bbox = None
+    if inMosaic is not None:
+        try:
+            bounds = inMosaic.rio.bounds()   # (left, bottom, right, top) in mosaic CRS
+            mosaic_bbox = shapely_box(*bounds)
+        except Exception as exc:
+            print(f'<_get_tile_regions> WARNING: could not get mosaic bounds ({exc}); skipping spatial filter.')
+
+    valid   = {}
+    skipped_date    = 0
+    skipped_spatial = 0
+
+    for reg_name, geom in regions_ref.items():
+
+        # ── 1. Date filter ────────────────────────────────────────────────
+        if has_date_refs:
+            reg_start_raw = start_ref.get(reg_name, '')
+            reg_end_raw   = end_ref.get(reg_name,   '')
+            reg_start = str(reg_start_raw[0]) if isinstance(reg_start_raw, list) else str(reg_start_raw)
+            reg_end   = str(reg_end_raw[0])   if isinstance(reg_end_raw,   list) else str(reg_end_raw)
+            if reg_start != tile_start or reg_end != tile_end:
+                skipped_date += 1
+                continue
+
+        # ── 2. Reproject region geometry ──────────────────────────────────
+        poly = shape(geom)
+        if need_reproject:
+            poly = shp_transform(transformer.transform, poly)
+
+        # ── 3. Spatial intersection filter ───────────────────────────────
+        if mosaic_bbox is not None and not mosaic_bbox.intersects(poly):
+            skipped_spatial += 1
+            continue
+
+        valid[reg_name] = poly
+
+    print(
+        f'<_get_tile_regions> {len(valid)} region(s) matched for tile '
+        f'{inParams.get("current_region", "")} ({tile_start} – {tile_end})  '
+        f'[skipped: {skipped_date} date-mismatch, {skipped_spatial} out-of-bounds]'
+    )
+    return valid
+
+# ─────────────────────────────────────────────────────────────────────────────
+# export_geotiff  — single-region writer
+# ─────────────────────────────────────────────────────────────────────────────
+
 def export_geotiff(inParams, inMosaic):
     """Export mosaic bands as separate GeoTIFF files, clipped to regions_ref.
 
-    Parameters
-    ----------
-    inParams : dict
-        Standardised parameter dictionary.
-    inMosaic : xr.Dataset
-        Computed mosaic returned by one_mosaic().
+    In *tiles* mode this function is called once per region by export_mosaic();
+    inParams['_clip_geom']    – projected Shapely geometry for this region
+    inParams['_region_label'] – region name used in the filename
+    inParams['_tile_label']   – tile name used in the filename  (absent in regions mode)
     """
-    import eoImage as eoIM  # local import mirrors the existing module structure
+    import eoImage as eoIM
 
-    # ── 1. Clip to the relevant region polygon(s) BEFORE int conversion ──
+    # ── 1. Clip ──────────────────────────────────────────────────────────
     mosaic_clipped = _clip_mosaic_to_regions(inParams, inMosaic)
 
-    # ── 2. Convert float pixel values to integers ────────────────────────
+    # ── 2. Int conversion ────────────────────────────────────────────────
     if '16' in inParams['out_datatype']:
         mosaic_int = (mosaic_clipped * 100.0).astype(np.int16)
     else:
@@ -1918,13 +1986,20 @@ def export_geotiff(inParams, inMosaic):
     os.makedirs(dir_path, exist_ok=True)
 
     # ── 4. Filename prefix ───────────────────────────────────────────────
-    SsrData    = eoIM.SSR_META_DICT[str(inParams['sensor'])]
-    region_str = str(inParams['current_region'])
-    period_str = str(inParams['time_str'])
-    filePrefix = f"{SsrData['NAME']}_{region_str}_{period_str}"
+    SsrData      = eoIM.SSR_META_DICT[str(inParams['sensor'])]
+    region_label = inParams.get('_region_label', str(inParams.get('current_region', 'region')))
+    tile_label   = inParams.get('_tile_label',   '')
+    period_str   = str(inParams['time_str'])
+    spa_scale    = inParams['resolution']
+
+    # tiles mode:   {sensor}_{region}_{tile}_{period}
+    # regions mode: {sensor}_{region}_{period}   (original behaviour)
+    if tile_label:
+        filePrefix = f"{SsrData['NAME']}_{region_label}_{tile_label}_{period_str}"
+    else:
+        filePrefix = f"{SsrData['NAME']}_{region_label}_{period_str}"
 
     # ── 5. Write per-band GeoTIFFs ───────────────────────────────────────
-    spa_scale    = inParams['resolution']
     export_style = str(inParams['export_style']).lower()
     ass_bands    = [eoIM.pix_sensor, eoIM.pix_date, 'scl', 'Fmask']
 
@@ -1959,50 +2034,35 @@ def export_geotiff(inParams, inMosaic):
         print(f'<export_geotiff> Wrote {output_path}')
 
 
-#############################################################################################################
-# Description: Samples every pixel of a mosaic and writes a CSV file — the xarray/local equivalent of
-#              GEE's ee.Image.sample() + Export.table.toDrive().
-#
-#              Each row in the output CSV is one sampled pixel and contains:
-#                longitude, latitude  — pixel centre in WGS-84 (EPSG:4326)
-#                <band_1> ... <band_N> — scaled float values for every data variable
-#                time_str             — compositing period label
-#                region               — spatial region name
-#
-#              Parameters that mirror GEE's ee.Image.sample() signature:
-#                scale      → inParams['csv_scale']      pixel size used for sampling (metres)
-#                dropNulls  → inParams['csv_dropNulls']  skip pixels where any band is NaN/masked
-#                (implicit) → inParams['csv_max_pixels'] row cap so the file stays manageable
-#
-# Revision history:  2026-Mar  Initial creation
-#############################################################################################################
-def export_csv(inParams, inMosaic):
-    """Sample every pixel of the mosaic and write a CSV, clipped to regions_ref.
+# ─────────────────────────────────────────────────────────────────────────────
+# export_csv  — single-region writer
+# ─────────────────────────────────────────────────────────────────────────────
 
-    Parameters
-    ----------
-    inParams : dict
-        Standardised parameter dictionary.
-    inMosaic : xr.Dataset
-        Computed mosaic returned by one_mosaic().
+def export_csv(inParams, inMosaic):
+    """Sample every pixel of the mosaic and write a CSV, clipped to one region.
+
+    In *tiles* mode this function is called once per region by export_mosaic();
+    inParams['_clip_geom']    – projected Shapely geometry for this region
+    inParams['_region_label'] – region name used in the filename
+    inParams['_tile_label']   – tile name used in the filename  (absent in regions mode)
     """
     import pandas as pd
     import pyproj
-    import eoImage as eoIM  # local import
+    import eoImage as eoIM
 
     print('\n<export_csv> Sampling mosaic pixels and building CSV table...')
 
-    # ── 1. Clip to the relevant region polygon(s) BEFORE sampling ────────
+    # ── 1. Clip ──────────────────────────────────────────────────────────
     mosaic_clipped = _clip_mosaic_to_regions(inParams, inMosaic)
 
-    # ── 2. Collect band names (exclude internal coordinate variables) ─────
+    # ── 2. Band names ─────────────────────────────────────────────────────
     skip_bands = {'spatial_ref'}
     band_names = [v for v in mosaic_clipped.data_vars if v not in skip_bands]
 
-    # ── 3. Stack (y, x) into a flat 'pixel' dimension ────────────────────
+    # ── 3. Stack → flat pixel dimension ──────────────────────────────────
     stacked = mosaic_clipped[band_names].stack(pixel=('y', 'x'))
 
-    # ── 4. Build raw DataFrame ────────────────────────────────────────────
+    # ── 4. DataFrame ──────────────────────────────────────────────────────
     data = {band: stacked[band].values for band in band_names}
     df   = pd.DataFrame(data)
 
@@ -2011,7 +2071,7 @@ def export_csv(inParams, inMosaic):
     if inParams.get('csv_dropNulls', True):
         nodata     = -10_000.0
         valid_mask = df.notna().all(axis=1) & (df != nodata).all(axis=1)
-        df         = df[valid_mask].reset_index(drop=True)
+        df          = df[valid_mask].reset_index(drop=True)
         pixel_index = pixel_index[
             valid_mask.values if hasattr(valid_mask, 'values') else valid_mask
         ]
@@ -2025,7 +2085,7 @@ def export_csv(inParams, inMosaic):
         df          = df.iloc[:max_px].reset_index(drop=True)
         pixel_index = pixel_index[:max_px]
 
-    # ── 7. Reproject pixel centres to WGS-84 ─────────────────────────────
+    # ── 7. Reproject pixel centres → WGS-84 ──────────────────────────────
     proj_str    = inParams.get('projection', 'EPSG:3979')
     src_crs     = pyproj.CRS.from_string(proj_str)
     dst_crs     = pyproj.CRS.from_epsg(4326)
@@ -2047,25 +2107,29 @@ def export_csv(inParams, inMosaic):
 
     df['start_date'] = start_date
     df['end_date']   = end_date
-    df['region']     = inParams.get('current_region', '')
+    df['region']     = inParams.get('_region_label', inParams.get('current_region', ''))
 
-    # ── 9. Scale band columns to physical units (×100, same as GeoTIFF) ──
+    # ── 9. Scale spectral bands ───────────────────────────────────────────
     scale_factor = 100.0
     ass_bands    = {eoIM.pix_sensor, eoIM.pix_date, 'scl', 'Fmask'}
     for b in band_names:
         if b not in ass_bands and b in df.columns:
             df[b] = df[b] * scale_factor
 
-    # ── 10. Build output path and write ───────────────────────────────────
-    SsrData    = eoIM.SSR_META_DICT[str(inParams['sensor'])]
-    region_str = str(inParams.get('current_region', 'region'))
-    period_str = str(inParams.get('time_str',        'period'))
-    spa_scale  = inParams.get('csv_scale', inParams.get('resolution', 30))
+    # ── 10. Output path ───────────────────────────────────────────────────
+    SsrData      = eoIM.SSR_META_DICT[str(inParams['sensor'])]
+    region_label = inParams.get('_region_label', str(inParams.get('current_region', 'region')))
+    tile_label   = inParams.get('_tile_label',   '')
+    period_str   = str(inParams.get('time_str',  'period'))
+    spa_scale    = inParams.get('csv_scale', inParams.get('resolution', 30))
 
-    dir_path = inParams['out_folder']
+    if tile_label:
+        filename = f"{SsrData['NAME']}_{region_label}_{tile_label}_{period_str}_{spa_scale}m.csv"
+    else:
+        filename = f"{SsrData['NAME']}_{region_label}_{period_str}_{spa_scale}m.csv"
+
+    dir_path    = inParams['out_folder']
     os.makedirs(dir_path, exist_ok=True)
-
-    filename    = f"{SsrData['NAME']}_{region_str}_{period_str}_{spa_scale}m.csv"
     output_path = os.path.join(dir_path, filename)
 
     df.to_csv(output_path, index=False)
@@ -2076,18 +2140,35 @@ def export_csv(inParams, inMosaic):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# export_mosaic  (unchanged dispatcher — kept here for reference)
+# export_mosaic  — orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
-
 def export_mosaic(inParams, inMosaic):
-    """Route to export_geotiff() or export_csv() based on output_type."""
     output_type = str(inParams.get('output_type', 'geotiff')).lower()
-    if output_type == 'csv':
-        export_csv(inParams, inMosaic)
+    writer      = export_csv if output_type == 'csv' else export_geotiff
+    mode        = str(inParams.get('mode', 'regions')).lower()
+
+    if mode == 'tiles':
+        # Pass inMosaic so _get_tile_regions can spatial-filter before any writing
+        tile_regions = _get_tile_regions(inParams, inMosaic)
+
+        if not tile_regions:
+            print('<export_mosaic> tiles mode: no matching regions found for this tile/time window — skipping export.')
+            return
+
+        tile_label = str(inParams.get('current_region', ''))
+
+        for reg_name, proj_geom in tile_regions.items():
+            print(f'\n<export_mosaic> tiles mode — exporting region: {reg_name} (tile: {tile_label})')
+            region_params = {
+                **inParams,
+                '_clip_geom':    proj_geom,
+                '_region_label': reg_name,
+                '_tile_label':   tile_label,
+            }
+            writer(region_params, inMosaic)
     else:
-        export_geotiff(inParams, inMosaic)
-
-
+        writer(inParams, inMosaic)
+        
 # ─────────────────────────────────────────────────────────────────────────────
 # eoParams.py patch — add these two strings to all_param_keys
 # ─────────────────────────────────────────────────────────────────────────────

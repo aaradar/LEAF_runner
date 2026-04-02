@@ -274,7 +274,23 @@ CompParams = {
 # 2:03 pm to 4:25 am = 14 hours and 22 minutes
 
 
-# 8:30 am to 1:34 am = 17 hours and 4 minutes for 1000 regions at 10m res with 32 workers and 16GB memory per worker
+
+#clipping tiles
+
+# tiles 50 regions (3000-3049) at 10m res with 10 workers and 50GB memory per worker
+# 8:58 to 9:34 = 36 mins
+
+
+# regions 50 regions (3000-3049) at 10m res with 10 workers and 50GB memory per worker
+# 9:44 to 10:26 = 42 mins
+
+
+# 8:30 am to 1:34 am = 17 hours and 4 minutes for 1000 regions at 10m resolution with 10 workers and 50GB memory per worker
+
+#clipping tiles
+# 1000 regions (3000-3999) at 10m res with 10 workers and 50GB memory per worker
+# 2:52 pm to 1:36 am = 10 hours and 44 minutes
+
 
 # split csv time
 # test geotiff in gee
@@ -307,3 +323,64 @@ da.rio.to_raster("output_with_nodata.tif")
 
  #check delayed execution with rio
  # move .compute to when you clip the mosaic
+
+
+########################################################################################
+# Clipping tile vs delayed compute clipping tile test
+########################################################################################
+
+
+
+
+
+
+
+#Delayed compute  tests
+
+# 50 regions with delayed .compute() afforestation 10w/50gb
+# 11:47am to 12:28 = 41 minutes for 1 region at 10m resolution with 10 workers and 50GB memory per worker
+
+# 50 tiled regions with delayed .compute() afforestation 10w/50gb
+
+# 50 tiled (subtiles) regions with delayed .compute() afforestation 10w/50gb
+# 12:32 to 1:24 = 52 minutes for 50 tiled regions at 10m resolution with 10 workers and 50GB memory per worker
+
+# 1000 regions with delayed .compute() afforestation 10w/50gb
+ 
+
+# 1000 tiled regions with delayed .compute() afforestation 10w/50gb
+# 7:27am to 6:13pm = 10 hours and 46 minutes for 1000 tiled regions at 10m resolution with 10 workers and 50GB memory per worker
+# same as the non delayed
+
+# 1000 sub tiled regions with delayed .compute() afforestation 10w/50gb
+# 1:38pm to 1:25 am = 11 hours and 47 minutes for 1000 sub-tiled regions at 10m resolution with 10 workers and 50GB memory per worker
+
+
+#vs
+
+
+
+
+#clipping tiles
+
+# tiles 50 regions (3000-3049) at 10m res with 10 workers and 50GB memory per worker
+# 8:58 to 9:34 = 36 mins
+
+
+# regions 50 regions (3000-3049) at 10m res with 10 workers and 50GB memory per worker
+# 9:44 to 10:26 = 42 mins
+
+# 8:30 am to 1:34 am = 17 hours and 4 minutes for 1000 regions at 10m resolution with 10 workers and 50GB memory per worker
+
+#clipping tiles
+# 1000 regions (3000-3999) at 10m res with 10 workers and 50GB memory per worker
+# 2:52 pm to 1:36 am = 10 hours and 44 minutes
+ 
+
+#func tools
+# parallel processing
+
+#FILTER REGION DICTIONARY in export_mosaic for valid regions in tiles and valid dates
+
+#polygon name and tile id prefix is polygon and the suffix which is the tile name 
+# call export_csv and geotiff for each region in a tile
