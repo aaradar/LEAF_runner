@@ -1,0 +1,419 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="2460" viewBox="0 0 1560 2460" font-family="'Segoe UI', Arial, sans-serif">
+<defs>
+  <marker id="arr"    viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 2L8 5L1 8" fill="none" stroke="#555"    stroke-width="1.5" stroke-linecap="round"/></marker>
+  <marker id="arr-b"  viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 2L8 5L1 8" fill="none" stroke="#1d4ed8" stroke-width="1.5" stroke-linecap="round"/></marker>
+  <marker id="arr-g"  viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 2L8 5L1 8" fill="none" stroke="#15803d" stroke-width="1.5" stroke-linecap="round"/></marker>
+  <marker id="arr-r"  viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 2L8 5L1 8" fill="none" stroke="#b91c1c" stroke-width="1.5" stroke-linecap="round"/></marker>
+  <marker id="arr-t"  viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 2L8 5L1 8" fill="none" stroke="#0f766e" stroke-width="1.5" stroke-linecap="round"/></marker>
+  <marker id="arr-o"  viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 2L8 5L1 8" fill="none" stroke="#b45309" stroke-width="1.5" stroke-linecap="round"/></marker>
+  <marker id="arr-p"  viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 2L8 5L1 8" fill="none" stroke="#6d28d9" stroke-width="1.5" stroke-linecap="round"/></marker>
+  <marker id="arr-sl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 2L8 5L1 8" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-linecap="round"/></marker>
+</defs>
+
+<!-- ═══════════ BACKGROUND ═══════════ -->
+<rect width="1560" height="2460" fill="#f1f5f9"/>
+
+<!-- ═══════════ PAGE TITLE ═══════════ -->
+<rect x="30" y="18" width="1500" height="52" rx="8" fill="#1e293b"/>
+<text x="780" y="40"  text-anchor="middle" font-size="18" font-weight="700" fill="white">LEAF_runner — Full Pipeline Flowchart</text>
+<text x="780" y="58"  text-anchor="middle" font-size="11" fill="#94a3b8">parameter_preparation.ipynb → prepare_params.py → Production.py → MosaicProduction / LEAFProduction → export_mosaic → _clip_mosaic_to_regions → outputs</text>
+
+<!-- ═══════════ LEGEND ═══════════ -->
+<rect x="30" y="82" width="740" height="68" rx="7" fill="white" stroke="#cbd5e1" stroke-width="1"/>
+<text x="46" y="100" font-size="10" font-weight="700" fill="#475569" letter-spacing="0.5">LEGEND</text>
+<rect x="46"  y="107" width="72" height="18" rx="4" fill="#6d28d9"/><text x="82"  y="120" text-anchor="middle" font-size="9" fill="white" font-weight="600">Entry point</text>
+<rect x="130" y="107" width="72" height="18" rx="4" fill="#1d4ed8"/><text x="166" y="120" text-anchor="middle" font-size="9" fill="white" font-weight="600">Orchestrator</text>
+<rect x="214" y="107" width="72" height="18" rx="4" fill="#0f766e"/><text x="250" y="120" text-anchor="middle" font-size="9" fill="white" font-weight="600">Prep step</text>
+<rect x="298" y="107" width="72" height="18" rx="4" fill="#b45309"/><text x="334" y="120" text-anchor="middle" font-size="9" fill="white" font-weight="600">Source module</text>
+<rect x="382" y="107" width="72" height="18" rx="4" fill="#166534"/><text x="418" y="120" text-anchor="middle" font-size="9" fill="white" font-weight="600">Biophysical path</text>
+<rect x="466" y="107" width="72" height="18" rx="4" fill="#1e3a8a"/><text x="502" y="120" text-anchor="middle" font-size="9" fill="white" font-weight="600">Mosaic path</text>
+<rect x="550" y="107" width="72" height="18" rx="4" fill="#15803d" stroke="#166534" stroke-dasharray="4 2"/><text x="586" y="120" text-anchor="middle" font-size="9" fill="white" font-weight="600">Export GeoTIFF</text>
+<rect x="634" y="107" width="72" height="18" rx="4" fill="#92400e" stroke="#78350f" stroke-dasharray="4 2"/><text x="670" y="120" text-anchor="middle" font-size="9" fill="white" font-weight="600">Export CSV</text>
+<text x="46"  y="143" font-size="9" fill="#64748b">Solid arrows = primary flow    Dashed arrows = conditional / optional calls    ◇ = decision</text>
+
+<!-- ═══════════ USER INPUTS (far left) ═══════════ -->
+<text x="46" y="178" font-size="10" font-weight="700" fill="#64748b">USER INPUTS</text>
+<rect x="30" y="185" width="190" height="52" rx="6" fill="white" stroke="#94a3b8" stroke-width="1"/>
+<text x="125" y="205" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">ProdParams</text>
+<text x="125" y="219" text-anchor="middle" font-size="10" fill="#64748b">sensor · year · months · prod_names</text>
+<text x="125" y="231" text-anchor="middle" font-size="9" fill="#94a3b8">resolution · out_folder · projection</text>
+
+<rect x="30" y="250" width="190" height="52" rx="6" fill="white" stroke="#94a3b8" stroke-width="1"/>
+<text x="125" y="270" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">CompParams</text>
+<text x="125" y="284" text-anchor="middle" font-size="10" fill="#64748b">number_workers · debug · nodes</text>
+<text x="125" y="296" text-anchor="middle" font-size="9" fill="#94a3b8">entire_tile · chunk_size · node_memory</text>
+
+<rect x="30" y="315" width="190" height="52" rx="6" fill="white" stroke="#94a3b8" stroke-width="1"/>
+<text x="125" y="335" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">KML / SHP Files</text>
+<text x="125" y="349" text-anchor="middle" font-size="10" fill="#64748b">Sample Points/*.kml  ·  *.shp</text>
+<text x="125" y="361" text-anchor="middle" font-size="9" fill="#94a3b8">AfforestationSites · GTA · Coldwater</text>
+
+<!-- inputs → parameter_preparation -->
+<line x1="220" y1="278" x2="290" y2="278" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arr-sl)"/>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  ZONE A – PARAMETER PREPARATION  (y 170 – 760)          -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<rect x="28" y="162" width="1504" height="8" rx="4" fill="#6d28d9" opacity="0.15"/>
+<text x="36" y="158" font-size="9" font-weight="700" fill="#6d28d9" opacity="0.8">A  PARAMETER PREPARATION</text>
+
+<!-- parameter_preparation.ipynb -->
+<rect x="290" y="185" width="380" height="64" rx="8" fill="#6d28d9" stroke="#5b21b6" stroke-width="1.2"/>
+<text x="480" y="208" text-anchor="middle" font-size="14" font-weight="700" fill="white">parameter_preparation.ipynb</text>
+<text x="480" y="224" text-anchor="middle" font-size="11" fill="#ddd6fe">Entry point · 4 parameter templates</text>
+<text x="480" y="238" text-anchor="middle" font-size="10" fill="#c4b5fd">Mode 1: single-year monthly  ·  Mode 2: custom ranges  ·  Mode 3: single date  ·  Mode 4: multi-year</text>
+
+<line x1="480" y1="249" x2="480" y2="283" stroke="#6d28d9" stroke-width="1.5" marker-end="url(#arr-p)"/>
+
+<!-- prepare_params.py -->
+<rect x="290" y="283" width="380" height="82" rx="8" fill="#1d4ed8" stroke="#1e40af" stroke-width="1.2"/>
+<text x="480" y="305" text-anchor="middle" font-size="14" font-weight="700" fill="white">prepare_params.py</text>
+<text x="480" y="321" text-anchor="middle" font-size="11" fill="#bfdbfe">prepare_production_params( ProdParams, CompParams )</text>
+<text x="480" y="337" text-anchor="middle" font-size="10" fill="#93c5fd">validate_production_params()  ·  apply_global_dates_to_regions()</text>
+<text x="480" y="351" text-anchor="middle" font-size="10" fill="#93c5fd">has_custom_window()  ·  month_range()  ·  apply_temporal_buffer_to_date()</text>
+
+<line x1="480" y1="365" x2="480" y2="400" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arr-b)"/>
+<text x="490" y="386" font-size="9" fill="#64748b">4 sequential steps</text>
+
+<!-- Distributor line for 4 steps -->
+<line x1="100" y1="420" x2="870" y2="420" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<line x1="100" y1="420" x2="100" y2="444" stroke="#94a3b8" stroke-width="1" marker-end="url(#arr-sl)"/>
+<line x1="320" y1="420" x2="320" y2="444" stroke="#94a3b8" stroke-width="1" marker-end="url(#arr-sl)"/>
+<line x1="560" y1="420" x2="560" y2="444" stroke="#94a3b8" stroke-width="1" marker-end="url(#arr-sl)"/>
+<line x1="800" y1="420" x2="800" y2="444" stroke="#94a3b8" stroke-width="1" marker-end="url(#arr-sl)"/>
+
+<!-- Step 1 Validate -->
+<rect x="40"  y="444" width="120" height="70" rx="7" fill="#0f766e" stroke="#0d9488" stroke-width="1"/>
+<text x="100" y="462" text-anchor="middle" font-size="10" font-weight="700" fill="white">Step 1 · Validate</text>
+<text x="100" y="476" text-anchor="middle" font-size="9" fill="#99f6e4">validate_production_params()</text>
+<text x="100" y="489" text-anchor="middle" font-size="9" fill="#99f6e4">regions · file_vars</text>
+<text x="100" y="502" text-anchor="middle" font-size="9" fill="#99f6e4">buffers · temporal params</text>
+
+<!-- Step 2 Regions -->
+<rect x="260" y="444" width="120" height="70" rx="7" fill="#0f766e" stroke="#0d9488" stroke-width="1"/>
+<text x="320" y="462" text-anchor="middle" font-size="10" font-weight="700" fill="white">Step 2 · Regions</text>
+<text x="320" y="476" text-anchor="middle" font-size="9" fill="#99f6e4">handle_regions_from_file()</text>
+<text x="320" y="489" text-anchor="middle" font-size="9" fill="#99f6e4">KML / SHP → dict</text>
+<text x="320" y="502" text-anchor="middle" font-size="9" fill="#99f6e4">spatial_buffer_m applied</text>
+
+<!-- Step 3 Dates -->
+<rect x="500" y="444" width="120" height="70" rx="7" fill="#0f766e" stroke="#0d9488" stroke-width="1"/>
+<text x="560" y="462" text-anchor="middle" font-size="10" font-weight="700" fill="white">Step 3 · Dates</text>
+<text x="560" y="476" text-anchor="middle" font-size="9" fill="#99f6e4">form_time_windows()</text>
+<text x="560" y="489" text-anchor="middle" font-size="9" fill="#99f6e4">ensure_date_symmetry()</text>
+<text x="560" y="502" text-anchor="middle" font-size="9" fill="#99f6e4">temporal_buffer applied</text>
+
+<!-- Step 4 Polygons -->
+<rect x="740" y="444" width="120" height="70" rx="7" fill="#0f766e" stroke="#0d9488" stroke-width="1"/>
+<text x="800" y="462" text-anchor="middle" font-size="10" font-weight="700" fill="white">Step 4 · Polygons</text>
+<text x="800" y="476" text-anchor="middle" font-size="9" fill="#99f6e4">validate_and_filter_polygons()</text>
+<text x="800" y="489" text-anchor="middle" font-size="9" fill="#99f6e4">filter_valid_polygons()</text>
+<text x="800" y="502" text-anchor="middle" font-size="9" fill="#99f6e4">create_processing_log()</text>
+
+<!-- ─── source modules under steps ─── -->
+<!-- Step 2 → leaf_wrapper -->
+<line x1="320" y1="514" x2="320" y2="558" stroke="#b45309" stroke-width="1.2" marker-end="url(#arr-o)"/>
+
+<!-- leaf_wrapper.py -->
+<rect x="190" y="558" width="260" height="110" rx="7" fill="#92400e" stroke="#78350f" stroke-width="1"/>
+<text x="320" y="578" text-anchor="middle" font-size="11" font-weight="700" fill="white">source/leaf_wrapper.py</text>
+<text x="320" y="594" text-anchor="middle" font-size="10" fill="#fde68a">regions_from_kml( file, start, end,</text>
+<text x="320" y="607" text-anchor="middle" font-size="10" fill="#fde68a">  spatial_buffer_m, file_variables )</text>
+<line x1="208" y1="617" x2="432" y2="617" stroke="#fde68a" stroke-width="0.4" stroke-opacity="0.5"/>
+<text x="320" y="630" text-anchor="middle" font-size="9" fill="#fcd34d">LeafWrapper.load()  →  _apply_buffer()</text>
+<text x="320" y="643" text-anchor="middle" font-size="9" fill="#fcd34d">→  to_region_dict()</text>
+<text x="320" y="656" text-anchor="middle" font-size="9" fill="#fbbf24">→ regions_dict · start_dates · end_dates</text>
+
+<!-- Step 2 → s2_tile_processor (dashed, only tiles mode) -->
+<path d="M260 480 L150 480 L150 558" fill="none" stroke="#b45309" stroke-width="1" stroke-dasharray="4 2" marker-end="url(#arr-o)"/>
+<text x="160" y="518" font-size="9" fill="#b45309">mode=tiles</text>
+
+<!-- s2_tile_processor -->
+<rect x="30" y="558" width="190" height="92" rx="7" fill="#92400e" stroke="#78350f" stroke-width="1"/>
+<text x="125" y="577" text-anchor="middle" font-size="11" font-weight="700" fill="white">source/s2_tile_processor.py</text>
+<text x="125" y="592" text-anchor="middle" font-size="10" fill="#fde68a">resolve_s2_tiles()</text>
+<text x="125" y="606" text-anchor="middle" font-size="10" fill="#fde68a">_find_tile_name_column()</text>
+<line x1="46" y1="614" x2="204" y2="614" stroke="#fde68a" stroke-width="0.4" stroke-opacity="0.5"/>
+<text x="125" y="627" text-anchor="middle" font-size="9" fill="#fcd34d">Converts regions → S2 MGRS</text>
+<text x="125" y="640" text-anchor="middle" font-size="9" fill="#fcd34d">tile footprints (parquet grid)</text>
+
+<!-- Step 4 → polygon_validator -->
+<line x1="800" y1="514" x2="800" y2="558" stroke="#b45309" stroke-width="1.2" marker-end="url(#arr-o)"/>
+
+<!-- polygon_validator.py -->
+<rect x="660" y="558" width="280" height="110" rx="7" fill="#92400e" stroke="#78350f" stroke-width="1"/>
+<text x="800" y="578" text-anchor="middle" font-size="11" font-weight="700" fill="white">source/polygon_validator.py</text>
+<text x="800" y="594" text-anchor="middle" font-size="10" fill="#fde68a">filter_valid_polygons( regions )</text>
+<text x="800" y="607" text-anchor="middle" font-size="10" fill="#fde68a">create_processing_log( regions, path )</text>
+<text x="800" y="620" text-anchor="middle" font-size="10" fill="#fde68a">is_zero_area_polygon( region_data )</text>
+<text x="800" y="633" text-anchor="middle" font-size="10" fill="#fde68a">calculate_polygon_area( coordinates )</text>
+<line x1="676" y1="641" x2="924" y2="641" stroke="#fde68a" stroke-width="0.4" stroke-opacity="0.5"/>
+<text x="800" y="654" text-anchor="middle" font-size="9" fill="#fcd34d">Shapely preferred · shoelace fallback</text>
+<text x="800" y="665" text-anchor="middle" font-size="9" fill="#fbbf24">→ valid_regions_dict · validation_log</text>
+
+<!-- polygon_validator → CSV export -->
+<line x1="940" y1="620" x2="1010" y2="620" stroke="#b45309" stroke-width="1.2" marker-end="url(#arr-o)"/>
+<rect x="1010" y="598" width="200" height="48" rx="6" fill="#92400e" stroke="#78350f" stroke-width="1.5" stroke-dasharray="5 2"/>
+<text x="1110" y="616" text-anchor="middle" font-size="11" font-weight="700" fill="white">Export CSV</text>
+<text x="1110" y="631" text-anchor="middle" font-size="10" fill="#fde68a">polygon_processing_log.csv</text>
+<text x="1110" y="643" text-anchor="middle" font-size="9" fill="#fcd34d">region_id · area_m2 · status</text>
+
+<!-- Collect lines back to validated params -->
+<line x1="100" y1="514" x2="100" y2="730" stroke="#94a3b8" stroke-width="0.8"/>
+<line x1="320" y1="668" x2="320" y2="730" stroke="#94a3b8" stroke-width="0.8"/>
+<line x1="560" y1="514" x2="560" y2="730" stroke="#94a3b8" stroke-width="0.8"/>
+<line x1="800" y1="668" x2="800" y2="730" stroke="#94a3b8" stroke-width="0.8"/>
+<line x1="100" y1="730" x2="800" y2="730" stroke="#94a3b8" stroke-width="0.8"/>
+<line x1="480" y1="730" x2="480" y2="756" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arr-b)"/>
+
+<!-- Validated Params -->
+<rect x="310" y="756" width="340" height="62" rx="8" fill="#1d4ed8" stroke="#1e40af" stroke-width="1.2"/>
+<text x="480" y="776" text-anchor="middle" font-size="13" font-weight="700" fill="white">Validated Params Package</text>
+<text x="480" y="793" text-anchor="middle" font-size="10" fill="#bfdbfe">{ ProdParams · CompParams · processing_log }</text>
+<text x="480" y="807" text-anchor="middle" font-size="10" fill="#93c5fd">regions_dict · region_start_dates · region_end_dates</text>
+
+<line x1="480" y1="818" x2="480" y2="856" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arr-b)"/>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  ZONE B – PRODUCTION DISPATCH  (y 840 – 1080)           -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<rect x="28" y="840" width="1504" height="8" rx="4" fill="#1d4ed8" opacity="0.15"/>
+<text x="36" y="836" font-size="9" font-weight="700" fill="#1d4ed8" opacity="0.8">B  PRODUCTION DISPATCH</text>
+
+<!-- Decision: all polygons zero? -->
+<polygon points="480,856 626,892 480,928 334,892" fill="white" stroke="#475569" stroke-width="1.5"/>
+<text x="480" y="886" text-anchor="middle" font-size="11" font-weight="600" fill="#1e293b">All polygons</text>
+<text x="480" y="902" text-anchor="middle" font-size="11" font-weight="600" fill="#1e293b">zero-area?</text>
+<!-- yes → abort -->
+<line x1="626" y1="892" x2="730" y2="892" stroke="#b91c1c" stroke-width="1.5" marker-end="url(#arr-r)"/>
+<text x="676" y="882" text-anchor="middle" font-size="10" fill="#b91c1c" font-weight="600">yes</text>
+<rect x="730" y="870" width="140" height="44" rx="7" fill="#fef2f2" stroke="#b91c1c" stroke-width="1.5"/>
+<text x="800" y="888" text-anchor="middle" font-size="12" font-weight="700" fill="#b91c1c">Return None</text>
+<text x="800" y="904" text-anchor="middle" font-size="10" fill="#b91c1c">Abort pipeline</text>
+<!-- no → Production.py -->
+<line x1="480" y1="928" x2="480" y2="960" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arr-b)"/>
+<text x="492" y="948" font-size="10" fill="#15803d" font-weight="600">no</text>
+
+<!-- Production.py main() -->
+<rect x="300" y="960" width="360" height="82" rx="8" fill="#1d4ed8" stroke="#1e40af" stroke-width="1.2"/>
+<text x="480" y="981" text-anchor="middle" font-size="13" font-weight="700" fill="white">Production.py  ·  main()</text>
+<text x="480" y="997" text-anchor="middle" font-size="11" fill="#bfdbfe">eoPM.form_inputs()  →  eoPM.which_product()</text>
+<text x="480" y="1013" text-anchor="middle" font-size="10" fill="#93c5fd">Strips invalid keys  ·  checks prod_names</text>
+<text x="480" y="1027" text-anchor="middle" font-size="10" fill="#93c5fd">source/eoParams.py  ·  source/eoTileGrids.py</text>
+
+<!-- eoParams sidebar -->
+<rect x="980" y="960" width="220" height="92" rx="7" fill="#374151" stroke="#1f2937" stroke-width="1"/>
+<text x="1090" y="980" text-anchor="middle" font-size="11" font-weight="700" fill="white">source/eoParams.py</text>
+<text x="1090" y="996" text-anchor="middle" font-size="10" fill="#d1d5db">form_inputs()  ·  which_product()</text>
+<text x="1090" y="1010" text-anchor="middle" font-size="10" fill="#d1d5db">get_mosaic_params()  ·  set_spatial_region()</text>
+<text x="1090" y="1024" text-anchor="middle" font-size="10" fill="#d1d5db">set_current_time()  ·  get_time_window()</text>
+<text x="1090" y="1038" text-anchor="middle" font-size="9" fill="#9ca3af">fix fCover bug  ·  standardize params</text>
+<line x1="660" y1="1001" x2="980" y2="1001" stroke="#374151" stroke-width="0.9" stroke-dasharray="4 2" marker-end="url(#arr)"/>
+
+<line x1="480" y1="1042" x2="480" y2="1076" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arr-b)"/>
+
+<!-- Decision: which_product? -->
+<polygon points="480,1076 660,1116 480,1156 300,1116" fill="white" stroke="#475569" stroke-width="1.5"/>
+<text x="480" y="1106" text-anchor="middle" font-size="11" font-weight="600" fill="#1e293b">prod_names contains</text>
+<text x="480" y="1122" text-anchor="middle" font-size="11" font-weight="600" fill="#1e293b">LAI / fCover / fAPAR / Albedo?</text>
+<text x="480" y="1138" text-anchor="middle" font-size="9" fill="#64748b">eoPM.which_product() → 'veg' or 'mosaic'</text>
+
+<!-- yes → left (LEAF) -->
+<line x1="300" y1="1116" x2="196" y2="1116" stroke="#15803d" stroke-width="1.5" marker-end="url(#arr-g)"/>
+<text x="246" y="1106" text-anchor="middle" font-size="10" fill="#15803d" font-weight="600">yes → veg</text>
+<!-- no → right (Mosaic) -->
+<line x1="660" y1="1116" x2="770" y2="1116" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arr-b)"/>
+<text x="714" y="1106" text-anchor="middle" font-size="10" fill="#1d4ed8" font-weight="600">no → mosaic</text>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  ZONE C – LEFT: LEAF PRODUCTION  (x 30–350)             -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<rect x="28" y="1168" width="1504" height="8" rx="4" fill="#166534" opacity="0.15"/>
+<text x="36" y="1164" font-size="9" font-weight="700" fill="#166534" opacity="0.8">C  PRODUCTION EXECUTION</text>
+
+<!-- LEAFProduction -->
+<rect x="30" y="1182" width="280" height="76" rx="8" fill="#166534" stroke="#14532d" stroke-width="1.2"/>
+<text x="170" y="1203" text-anchor="middle" font-size="12" font-weight="700" fill="white">source/LEAFProduction.py</text>
+<text x="170" y="1219" text-anchor="middle" font-size="10" fill="#bbf7d0">leaf.LEAF_production( prod_params, comp_params )</text>
+<text x="170" y="1234" text-anchor="middle" font-size="10" fill="#86efac">Biophysical map generation</text>
+<text x="170" y="1248" text-anchor="middle" font-size="10" fill="#86efac">LAI · fCover · fAPAR · Albedo</text>
+<line x1="196" y1="1182" x2="170" y2="1182" stroke="#15803d" stroke-width="1.5" marker-end="url(#arr-g)"/>
+<line x1="170" y1="1258" x2="170" y2="1296" stroke="#15803d" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+<!-- SL2P_NetsTools -->
+<rect x="30" y="1296" width="280" height="110" rx="8" fill="#14532d" stroke="#052e16" stroke-width="1.2"/>
+<text x="170" y="1316" text-anchor="middle" font-size="12" font-weight="700" fill="white">SL2P_NetsTools.py</text>
+<text x="170" y="1332" text-anchor="middle" font-size="10" fill="#bbf7d0">Neural network biophysical retrieval</text>
+<line x1="50" y1="1340" x2="290" y2="1340" stroke="#bbf7d0" stroke-width="0.4" stroke-opacity="0.5"/>
+<text x="170" y="1354" text-anchor="middle" font-size="10" fill="#86efac">get_net_indices()</text>
+<text x="170" y="1368" text-anchor="middle" font-size="10" fill="#86efac">apply_net( reflectance_stack )</text>
+<text x="170" y="1382" text-anchor="middle" font-size="10" fill="#86efac">cast_LCMap_to_int()  ·  print_net_values()</text>
+<text x="170" y="1396" text-anchor="middle" font-size="9" fill="#4ade80">sl2p_nets/ pre-trained weights (S2/Landsat/HLS)</text>
+
+<!-- SL2P → export_mosaic (leaf) -->
+<line x1="170" y1="1406" x2="170" y2="1444" stroke="#15803d" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  ZONE C – RIGHT: MOSAIC PRODUCTION  (x 770–1200)        -->
+<!-- ══════════════════════════════════════════════════════════ -->
+
+<!-- MosaicProduction -->
+<rect x="770" y="1182" width="310" height="76" rx="8" fill="#1e3a8a" stroke="#1e40af" stroke-width="1.2"/>
+<text x="925" y="1203" text-anchor="middle" font-size="12" font-weight="700" fill="white">MosaicProduction()  [Production.py]</text>
+<text x="925" y="1219" text-anchor="middle" font-size="10" fill="#bfdbfe">eoPM.get_mosaic_params()  →  region loop</text>
+<text x="925" y="1234" text-anchor="middle" font-size="10" fill="#93c5fd">for reg_name in region_names:  eoPM.set_spatial_region()</text>
+<text x="925" y="1248" text-anchor="middle" font-size="10" fill="#93c5fd">for TIndex in range(nTimes):  eoPM.set_current_time()</text>
+<line x1="770" y1="1220" x2="770" y2="1220" stroke="#1d4ed8" stroke-width="1.5"/>
+
+<line x1="925" y1="1258" x2="925" y2="1296" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arr-b)"/>
+
+<!-- Decision: mode=tiles? -->
+<polygon points="925,1296 1050,1328 925,1360 800,1328" fill="white" stroke="#475569" stroke-width="1.4"/>
+<text x="925" y="1318" text-anchor="middle" font-size="10" font-weight="600" fill="#1e293b">mode = 'tiles'?</text>
+<text x="925" y="1334" text-anchor="middle" font-size="10" font-weight="600" fill="#1e293b">(entire_tile path)</text>
+
+<!-- yes → _get_tile_regions -->
+<line x1="1050" y1="1328" x2="1140" y2="1328" stroke="#1d4ed8" stroke-width="1.3" marker-end="url(#arr-b)"/>
+<text x="1093" y="1318" text-anchor="middle" font-size="10" fill="#1d4ed8" font-weight="600">yes</text>
+
+<rect x="1140" y="1306" width="220" height="48" rx="7" fill="#1e3a8a" stroke="#1e40af" stroke-width="1"/>
+<text x="1250" y="1325" text-anchor="middle" font-size="11" font-weight="700" fill="white">_get_tile_regions()</text>
+<text x="1250" y="1341" text-anchor="middle" font-size="10" fill="#bfdbfe">eoTG.get_subtile_names()</text>
+<text x="1250" y="1353" text-anchor="middle" font-size="9" fill="#93c5fd">builds tile footprint dict</text>
+
+<!-- _get_tile_regions → eoMosaic -->
+<line x1="1250" y1="1354" x2="1250" y2="1410" stroke="#1d4ed8" stroke-width="1.3"/>
+<line x1="1250" y1="1410" x2="1080" y2="1410" stroke="#1d4ed8" stroke-width="1.3" marker-end="url(#arr-b)"/>
+
+<!-- no → direct eoMosaic -->
+<line x1="925" y1="1360" x2="925" y2="1410" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arr-b)"/>
+<text x="938" y="1388" font-size="10" fill="#1d4ed8" font-weight="600">no → regions</text>
+
+<!-- eoMosaic.py / one_mosaic -->
+<rect x="770" y="1410" width="310" height="76" rx="7" fill="#374151" stroke="#1f2937" stroke-width="1.2"/>
+<text x="925" y="1431" text-anchor="middle" font-size="12" font-weight="700" fill="white">source/eoMosaic.py</text>
+<text x="925" y="1447" text-anchor="middle" font-size="10" fill="#e5e7eb">eoMz.one_mosaic( usedParams, CompParams )</text>
+<text x="925" y="1462" text-anchor="middle" font-size="10" fill="#d1d5db">AIMz.one_mosaicB()  — entire_tile subtile loop</text>
+<text x="925" y="1476" text-anchor="middle" font-size="9" fill="#9ca3af">STAC query · cloud mask · composite · reproject</text>
+
+<line x1="925" y1="1486" x2="925" y2="1520" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arr-b)"/>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  ZONE D – EXPORT / CLIP STAGE  (y 1444 – 1780)          -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<rect x="28" y="1502" width="1504" height="8" rx="4" fill="#15803d" opacity="0.15"/>
+<text x="36" y="1498" font-size="9" font-weight="700" fill="#15803d" opacity="0.8">D  EXPORT &amp; CLIP</text>
+
+<!-- export_mosaic (shared: both leaf and mosaic) -->
+<!-- leaf side -->
+<rect x="30" y="1444" width="280" height="60" rx="7" fill="#1e3a8a" stroke="#1e40af" stroke-width="1.1"/>
+<text x="170" y="1465" text-anchor="middle" font-size="12" font-weight="700" fill="white">export_mosaic()</text>
+<text x="170" y="1481" text-anchor="middle" font-size="10" fill="#bfdbfe">writes per-region biophysical rasters</text>
+<text x="170" y="1494" text-anchor="middle" font-size="9" fill="#93c5fd">out_folder / sensor / region / date</text>
+
+<!-- mosaic side -->
+<rect x="770" y="1520" width="310" height="60" rx="7" fill="#1e3a8a" stroke="#1e40af" stroke-width="1.1"/>
+<text x="925" y="1541" text-anchor="middle" font-size="12" font-weight="700" fill="white">export_mosaic()</text>
+<text x="925" y="1557" text-anchor="middle" font-size="10" fill="#bfdbfe">writes composite image per region/time</text>
+<text x="925" y="1569" text-anchor="middle" font-size="9" fill="#93c5fd">out_folder / sensor / region / date · int16/int8</text>
+
+<!-- Both export_mosaics → _clip_mosaic_to_regions -->
+<!-- left side down -->
+<line x1="170" y1="1504" x2="170" y2="1600" stroke="#15803d" stroke-width="1.3" marker-end="url(#arr-g)"/>
+<!-- right side down -->
+<line x1="925" y1="1580" x2="925" y2="1600" stroke="#1d4ed8" stroke-width="1.3" marker-end="url(#arr-b)"/>
+
+<!-- Decision: tiles mode? (for the clip stage) -->
+<!-- tiles mode → _get_tile_regions already ran, now clip with tile boundaries -->
+<!-- We show _clip_mosaic_to_regions below both -->
+
+<!-- _clip_mosaic_to_regions (LEFT – leaf path) -->
+<rect x="30" y="1600" width="280" height="68" rx="7" fill="#166534" stroke="#14532d" stroke-width="1.1"/>
+<text x="170" y="1620" text-anchor="middle" font-size="12" font-weight="700" fill="white">_clip_mosaic_to_regions()</text>
+<text x="170" y="1636" text-anchor="middle" font-size="10" fill="#bbf7d0">clips output raster to each region polygon</text>
+<text x="170" y="1650" text-anchor="middle" font-size="10" fill="#86efac">rioxarray mask · rasterio clip geometry</text>
+<text x="170" y="1663" text-anchor="middle" font-size="9" fill="#4ade80">runs for both regions mode and tiles mode</text>
+
+<!-- _clip_mosaic_to_regions (RIGHT – mosaic path) -->
+<rect x="770" y="1600" width="310" height="68" rx="7" fill="#1e3a8a" stroke="#1e40af" stroke-width="1.1"/>
+<text x="925" y="1620" text-anchor="middle" font-size="12" font-weight="700" fill="white">_clip_mosaic_to_regions()</text>
+<text x="925" y="1636" text-anchor="middle" font-size="10" fill="#bfdbfe">clips composite raster to each region polygon</text>
+<text x="925" y="1650" text-anchor="middle" font-size="10" fill="#93c5fd">rioxarray mask · rasterio clip geometry</text>
+<text x="925" y="1663" text-anchor="middle" font-size="9" fill="#60a5fa">runs for both regions mode and tiles mode</text>
+
+<!-- tiles mode note arrows into clip boxes -->
+<!-- left tiles note -->
+<text x="32" y="1594" font-size="9" fill="#64748b" font-style="italic">← tiles mode: _get_tile_regions() boundaries used</text>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  ZONE E – OUTPUTS  (y 1720+)                             -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<rect x="28" y="1702" width="1504" height="8" rx="4" fill="#0f172a" opacity="0.12"/>
+<text x="36" y="1698" font-size="9" font-weight="700" fill="#0f172a" opacity="0.7">E  OUTPUTS</text>
+
+<!-- LEFT outputs (leaf) -->
+<line x1="170" y1="1668" x2="170" y2="1714" stroke="#15803d" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+<!-- GeoTIFF (leaf) -->
+<rect x="30" y="1714" width="280" height="64" rx="7" fill="#15803d" stroke="#166534" stroke-width="1.5" stroke-dasharray="6 2"/>
+<text x="170" y="1735" text-anchor="middle" font-size="12" font-weight="700" fill="white">Export GeoTIFF</text>
+<text x="170" y="1751" text-anchor="middle" font-size="10" fill="#bbf7d0">LAI_YYYY-MM-DD.tif · fCover.tif</text>
+<text x="170" y="1765" text-anchor="middle" font-size="10" fill="#bbf7d0">fAPAR.tif · Albedo.tif</text>
+<text x="170" y="1777" text-anchor="middle" font-size="9" fill="#86efac">EPSG:3979 · 30 m · clipped to region boundary</text>
+
+<line x1="170" y1="1778" x2="170" y2="1810" stroke="#b45309" stroke-width="1.3" marker-end="url(#arr-o)"/>
+
+<!-- CSV (leaf) -->
+<rect x="30" y="1810" width="280" height="52" rx="7" fill="#92400e" stroke="#78350f" stroke-width="1.5" stroke-dasharray="6 2"/>
+<text x="170" y="1830" text-anchor="middle" font-size="12" font-weight="700" fill="white">Export CSV</text>
+<text x="170" y="1846" text-anchor="middle" font-size="10" fill="#fde68a">per-pixel biophysical values table</text>
+<text x="170" y="1858" text-anchor="middle" font-size="9" fill="#fcd34d">region_id · date · LAI · fCover · fAPAR · Albedo</text>
+
+<!-- RIGHT outputs (mosaic) -->
+<line x1="925" y1="1668" x2="925" y2="1714" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arr-b)"/>
+
+<!-- GeoTIFF (mosaic) -->
+<rect x="770" y="1714" width="310" height="64" rx="7" fill="#15803d" stroke="#166534" stroke-width="1.5" stroke-dasharray="6 2"/>
+<text x="925" y="1735" text-anchor="middle" font-size="12" font-weight="700" fill="white">Export GeoTIFF</text>
+<text x="925" y="1751" text-anchor="middle" font-size="10" fill="#bbf7d0">mosaic_YYYY-MM-DD.tif · int16 / int8</text>
+<text x="925" y="1765" text-anchor="middle" font-size="10" fill="#bbf7d0">EPSG:3979 · 30 m · clipped to region boundary</text>
+<text x="925" y="1777" text-anchor="middle" font-size="9" fill="#86efac">gdal_mosaic_rasters() merges subtiles (entire_tile)</text>
+
+<line x1="925" y1="1778" x2="925" y2="1810" stroke="#b45309" stroke-width="1.3" marker-end="url(#arr-o)"/>
+
+<!-- CSV (mosaic) -->
+<rect x="770" y="1810" width="310" height="52" rx="7" fill="#92400e" stroke="#78350f" stroke-width="1.5" stroke-dasharray="6 2"/>
+<text x="925" y="1830" text-anchor="middle" font-size="12" font-weight="700" fill="white">Export CSV</text>
+<text x="925" y="1846" text-anchor="middle" font-size="10" fill="#fde68a">region coverage summary table</text>
+<text x="925" y="1858" text-anchor="middle" font-size="9" fill="#fcd34d">region_id · tile_name · date · coverage_pct</text>
+
+<!-- ═══ loop-back arrows ═══ -->
+<!-- mosaic region loop back -->
+<path d="M1080 1460 L1120 1460 L1120 1220 L1080 1220" fill="none" stroke="#1d4ed8" stroke-width="0.9" stroke-dasharray="4 2" marker-end="url(#arr-b)"/>
+<text x="1128" y="1344" font-size="9" fill="#1d4ed8">next region / TIndex</text>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  SHARED NOTES                                             -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- Note box: tiles vs regions difference -->
+<rect x="430" y="1570" width="310" height="106" rx="7" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="585" y="1590" text-anchor="middle" font-size="10" font-weight="700" fill="#334155">Tiles mode vs Regions mode</text>
+<line x1="446" y1="1597" x2="724" y2="1597" stroke="#e2e8f0" stroke-width="0.8"/>
+<text x="446" y="1612" font-size="9" fill="#475569" font-weight="600">Regions mode (default):</text>
+<text x="446" y="1625" font-size="9" fill="#64748b">  region polygons used directly for clip</text>
+<text x="446" y="1638" font-size="9" fill="#475569" font-weight="600">Tiles mode (mode='tiles'):</text>
+<text x="446" y="1651" font-size="9" fill="#64748b">  s2_tile_processor → _get_tile_regions()</text>
+<text x="446" y="1664" font-size="9" fill="#64748b">  MGRS tile footprints used for clip boundary</text>
+<text x="446" y="1674" font-size="9" fill="#64748b">  _clip_mosaic_to_regions() same for both</text>
+
+<!-- connector lines from note to both clip boxes -->
+<line x1="430" y1="1634" x2="310" y2="1634" stroke="#94a3b8" stroke-width="0.7" stroke-dasharray="3 2"/>
+<line x1="740" y1="1634" x2="770" y2="1634" stroke="#94a3b8" stroke-width="0.7" stroke-dasharray="3 2"/>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  FOOTER                                                   -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<rect x="28" y="1884" width="1504" height="36" rx="6" fill="#1e293b"/>
+<text x="780" y="1900" text-anchor="middle" font-size="11" fill="#94a3b8">LEAF_runner · github.com/aaradar/LEAF_runner · April 2026</text>
+<text x="780" y="1914" text-anchor="middle" font-size="10" fill="#64748b">Solid arrows = primary control flow  ·  Dashed arrows = conditional / mode-specific  ·  SVG format — scalable to any size</text>
+</svg>
