@@ -1807,9 +1807,31 @@ mode = 'regions'  (or key absent)
 ############################################### exporting #############################################
 
 def _clip_mosaic_to_regions(inParams, mosaic):
-    """Return a copy of *mosaic* clipped to the relevant region polygon(s).
-    If a clip_geom is passed directly in inParams['_clip_geom'] (projected), use it.
-    Otherwise fall back to the original region-lookup logic.
+    """
+    Clip an xarray mosaic to the relevant region polygon(s) based on the processing mode.
+
+    Checks for a pre-projected geometry in inParams['_clip_geom'] first (fast path).
+    Otherwise, resolves the clip geometry from inParams['regions_ref'] using the
+    current mode:
+      - 'tiles'   : unions all polygons in regions_ref into one clip geometry
+      - 'regions' : uses only the polygon matching inParams['current_region']
+
+    Input polygons are assumed to be in EPSG:4326 and are reprojected to the
+    CRS defined by inParams['projection'] (default: EPSG:3979) before clipping.
+    If clipping fails, the original unclipped mosaic is returned with a warning.
+
+    Parameters
+    ----------
+    inParams : dict
+        Parameter dictionary. Relevant keys: 'regions_ref', 'mode',
+        'current_region', 'projection', '_clip_geom'.
+    mosaic : xarray.Dataset
+        The mosaic to clip.
+
+    Returns
+    -------
+    xarray.Dataset
+        Clipped (or original, on failure) mosaic.
     """
     # Fast path: caller already prepared a projected geometry
     if '_clip_geom' in inParams:
@@ -1875,10 +1897,35 @@ def _clip_mosaic_to_regions(inParams, mosaic):
 
 
 def _get_tile_regions(inParams, inMosaic=None):
-    """Return a filtered dict of {region_name: projected_shapely_geom} for the current tile.
-    Filters by:
-      1. Date window match (if region_start/end_dates_ref provided)
-      2. Spatial intersection with the mosaic bounds (if inMosaic provided)
+    """
+    Return a filtered dict of {region_name: projected_shapely_geom} for the current tile.
+
+    Only applicable in 'tiles' mode. Regions are filtered by two criteria:
+      1. Date window — region's start/end dates must match the current tile's
+         time window (only applied if 'region_start_dates_ref' and
+         'region_end_dates_ref' are present in inParams).
+      2. Spatial intersection — region geometry must intersect the mosaic's
+         bounding box (only applied if inMosaic is provided).
+
+    Input geometries from regions_ref are reprojected from EPSG:4326 to the
+    CRS defined by inParams['projection'] before intersection testing.
+
+    Parameters
+    ----------
+    inParams : dict
+        Parameter dictionary. Relevant keys: 'mode', 'regions_ref',
+        'start_dates', 'end_dates', 'current_time', 'region_start_dates_ref',
+        'region_end_dates_ref', 'projection'.
+    inMosaic : xarray.Dataset, optional
+        Used to derive the tile bounding box for spatial pre-filtering.
+        If None, the spatial filter is skipped.
+
+    Returns
+    -------
+    dict
+        {region_name (str): projected Shapely geometry} for all regions
+        that pass both filters. Empty dict if mode != 'tiles' or no
+        regions_ref is present.
     """
     if str(inParams.get('mode', 'regions')).lower() != 'tiles':
         return {}
@@ -1959,14 +2006,39 @@ def _get_tile_regions(inParams, inMosaic=None):
 # ─────────────────────────────────────────────────────────────────────────────
 # export_geotiff  — single-region writer
 # ─────────────────────────────────────────────────────────────────────────────
-
+#############################################################################################################
+# Description: This function exports the band images of a mosaic into separate GeoTiff files
+#
+# Revision history:  2024-May-24  Lixin Sun  Initial creation
+#                    2024-Dec-04  Marjan Asgari Add .compute() on the mosaic before saving it to tiff files
+#############################################################################################################
 def export_geotiff(inParams, inMosaic):
-    """Export mosaic bands as separate GeoTIFF files, clipped to regions_ref.
+    """
+    Export mosaic bands as separate GeoTIFF files, clipped to the relevant region.
 
-    In *tiles* mode this function is called once per region by export_mosaic();
-    inParams['_clip_geom']    – projected Shapely geometry for this region
-    inParams['_region_label'] – region name used in the filename
-    inParams['_tile_label']   – tile name used in the filename  (absent in regions mode)
+    The mosaic is first clipped via _clip_mosaic_to_regions(), then scaled
+    and cast to the dtype specified by inParams['out_datatype'] (int16 * 100
+    or int8). One GeoTIFF is written per band when export_style contains
+    'sepa'; otherwise the full mosaic is written as a single NetCDF file.
+
+    In 'tiles' mode this function is called once per region by export_mosaic(),
+    with the following extra keys injected into inParams:
+      '_clip_geom'    – pre-projected Shapely geometry for this region
+      '_region_label' – region name used in the output filename
+      '_tile_label'   – tile name used in the output filename
+
+    Output filenames follow the pattern:
+      tiles mode   : {sensor}_{region}_{tile}_{period}[_{band}]_{scale}m.tif
+      regions mode : {sensor}_{region}_{period}[_{band}]_{scale}m.tif
+
+    Parameters
+    ----------
+    inParams : dict
+        Parameter dictionary. Relevant keys: 'out_datatype', 'projection',
+        'out_folder', 'sensor', 'time_str', 'resolution', 'export_style',
+        'bands', '_region_label', '_tile_label'.
+    inMosaic : xarray.Dataset
+        The mosaic to export.
     """
     import eoImage as eoIM
 
@@ -2039,12 +2111,38 @@ def export_geotiff(inParams, inMosaic):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def export_csv(inParams, inMosaic):
-    """Sample every pixel of the mosaic and write a CSV, clipped to one region.
+    """
+    Sample every pixel of the mosaic and write the values to a CSV file,
+    clipped to one region.
 
-    In *tiles* mode this function is called once per region by export_mosaic();
-    inParams['_clip_geom']    – projected Shapely geometry for this region
-    inParams['_region_label'] – region name used in the filename
-    inParams['_tile_label']   – tile name used in the filename  (absent in regions mode)
+    The mosaic is clipped via _clip_mosaic_to_regions(), stacked to a flat
+    pixel dimension, and converted to a pandas DataFrame. Null pixels and
+    no-data values (-10,000) are optionally dropped, output is optionally
+    capped at a maximum pixel count, and pixel centres are reprojected from
+    the mosaic CRS to WGS-84 (EPSG:4326) before writing.
+
+    Spectral bands are scaled by 100; assessment bands (sensor, date, scl,
+    Fmask) are written as-is. Metadata columns 'start_date', 'end_date',
+    and 'region' are appended.
+
+    In 'tiles' mode this function is called once per region by export_mosaic(),
+    with the following extra keys injected into inParams:
+      '_clip_geom'    – pre-projected Shapely geometry for this region
+      '_region_label' – region name used in the output filename
+      '_tile_label'   – tile name used in the output filename
+
+    Output filenames follow the pattern:
+      tiles mode   : {sensor}_{region}_{tile}_{period}_{scale}m.csv
+      regions mode : {sensor}_{region}_{period}_{scale}m.csv
+
+    Parameters
+    ----------
+    inParams : dict
+        Parameter dictionary. Relevant keys: 'projection', 'out_folder',
+        'sensor', 'time_str', 'resolution', 'csv_dropNulls',
+        'csv_max_pixels', 'csv_scale', '_region_label', '_tile_label'.
+    inMosaic : xarray.Dataset
+        The mosaic to sample.
     """
     import pandas as pd
     import pyproj
@@ -2143,6 +2241,28 @@ def export_csv(inParams, inMosaic):
 # export_mosaic  — orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
 def export_mosaic(inParams, inMosaic):
+    """
+    Orchestrate mosaic export by dispatching to the appropriate writer
+    (export_geotiff or export_csv) based on inParams['output_type'].
+
+    In 'tiles' mode, iterates over all regions returned by _get_tile_regions()
+    and calls the writer once per region, injecting '_clip_geom',
+    '_region_label', and '_tile_label' into a shallow copy of inParams.
+    If no matching regions are found for the current tile/time window,
+    the export is skipped entirely.
+
+    In 'regions' mode (default), the writer is called once with inParams
+    unchanged, delegating all clipping logic to _clip_mosaic_to_regions().
+
+    Parameters
+    ----------
+    inParams : dict
+        Parameter dictionary. Relevant keys: 'output_type' ('csv' or
+        'geotiff'), 'mode' ('tiles' or 'regions'), 'current_region',
+        'regions_ref', plus all keys required by the selected writer.
+    inMosaic : xarray.Dataset
+        The mosaic to export.
+    """
     output_type = str(inParams.get('output_type', 'geotiff')).lower()
     writer      = export_csv if output_type == 'csv' else export_geotiff
     mode        = str(inParams.get('mode', 'regions')).lower()
