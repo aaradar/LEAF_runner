@@ -36,9 +36,11 @@ jupyter notebook
 jupyter lab
 ```
 ## To install with .yml
+```bash
 conda env create -f environment.yml
 conda activate leaf-env
 python -m ipykernel install --user --name leaf-env --display-name "Python (leaf-env)"
+```
 
 ## Overview
 
