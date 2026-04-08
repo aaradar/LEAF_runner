@@ -431,8 +431,8 @@ def handle_regions_from_file(ProdParams: Dict[str, Any]) -> Dict[str, Any]:
                                         if end_dt.month == 2 and end_dt.day == 29 \
                                         else end_dt.replace(year=end_dt.year + year_offset)
                                 
-                                multi_year_starts.append([new_start.strftime('%Y-%m-%d')])
-                                multi_year_ends.append([new_end.strftime('%Y-%m-%d')])
+                                multi_year_starts.append(new_start.strftime('%Y-%m-%d'))
+                                multi_year_ends.append(new_end.strftime('%Y-%m-%d'))
                         
                         expanded_start[region_name] = multi_year_starts
                         expanded_end[region_name]   = multi_year_ends
