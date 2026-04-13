@@ -381,6 +381,20 @@ da.rio.to_raster("output_with_nodata.tif")
 # parallel processing
 
 #FILTER REGION DICTIONARY in export_mosaic for valid regions in tiles and valid dates
+# run everything in export_mosaic, each region should have a call
 
 #polygon name and tile id prefix is polygon and the suffix which is the tile name 
 # call export_csv and geotiff for each region in a tile
+
+# all regions sub tiles
+# 1:19pm to 12:00am + 12:01am to 10:54pm = 21 hours and 35 minutes for 4800+ sub-tiled regions at 10m resolution with 10 workers and 50GB memory per worker
+
+
+# 29 regions with 3 summer months with 10 workers and 50GB memory per worker
+# 1:22 pm to 8:35am = 19 hours and 13 minutes for 29 regions at 10m resolution with 10 workers and 50GB memory per worker
+# total minutes = 1153 minutes
+
+
+# 11:48 am to 12:31 pm = 43 minutes fo all pipelines 2025
+
+# pipeline 2017 9:50 am to 10:20 am = 30 minutes for all pipelines 2017

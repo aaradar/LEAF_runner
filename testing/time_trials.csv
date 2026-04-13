@@ -1,0 +1,26 @@
+description,sensor,regions,resolution_m,workers,memory_per_worker_GB,duration_minutes,notes
+Afforestation tiled regions,S2_SR,1000,10,32,16,1103,32w/16gb config
+Afforestation tiled regions,S2_SR,1000,20,32,16,884,32w/16gb config; 20m is ~80% of 10m time
+Pipeline region1,S2_SR,1,10,32,16,145,crashes due to 16GB memory limit overloaded at dask completion
+Pipeline region1,S2_SR,1,10,10,50,145,10:27 to 1:02
+Pipeline region1,S2_SR,1,10,10,50,141,11:19 to 1:40
+Pipeline region1,S2_SR,1,10,10,50,143,8:54 to 11:17
+Pipeline region1,S2_SR,1,10,10,50,139,12:22 to 14:41
+Pipeline region1,S2_SR,1,20,32,16,52,10:24 to 11:16
+Pipeline region1,S2_SR,1,20,10,50,49,11:25 to 12:14
+One tile,S2_SR,1,10,10,50,147,
+Clipping tiles - 50 regions,S2_SR,50,10,10,50,36,regions 3000-3049
+Clipping regions - 50 regions,S2_SR,50,10,10,50,42,regions 3000-3049
+Clipping regions - 1000 regions,S2_SR,1000,10,10,50,1024,8:30am to 1:34am
+Clipping tiles - 1000 regions,S2_SR,1000,10,10,50,644,2:52pm to 1:36am; regions 3000-3999
+HLS 50 regions,HLS_SR,50,30,10,50,82,12:26pm to 1:48pm
+HLS 1000 regions,HLS_SR,1000,30,10,50,1713,1:52pm to 6:40am + 9:19am to 9:04pm
+HLS 50 regions with tiles,HLS_SR,50,30,10,50,62,7:30am to 8:32am
+HLS 1000 regions with tiles,HLS_SR,1000,30,10,50,485,8:35am to 5:40pm
+1000 CSV regions,S2_SR,1000,10,10,50,862,2:03pm to 4:25am
+Delayed compute - 50 regions,S2_SR,50,10,10,50,41,11:47am to 12:28
+Delayed compute - 50 tiled (subtiles) regions,S2_SR,50,10,10,50,52,12:32 to 1:24
+Delayed compute - 1000 tiled regions,S2_SR,1000,10,10,50,646,7:27am to 6:13pm; same as non-delayed
+Delayed compute - 1000 sub-tiled regions,S2_SR,1000,10,10,50,707,1:38pm to 1:25am
+All regions sub-tiles,S2_SR,4800+,10,10,50,1295,1:19pm to 12:00am + 12:01am to 10:54pm
+"Small subset 29 regions, all summer data over 2 sensors for 10 years (hls)",S2_SR,29,30,10,50,1153,1:22 pm to 8:35am = 19 hours and 13 minutes for 29 regions

@@ -16,8 +16,9 @@ tqdm==4.66.4
 urllib3==2.3.0
 xarray==2024.6.0
 bokeh!=3.0.*,>=2.4.2
-gdal
-geopandas
-shapely 
-pyogrio 
-packaging
+gdal==3.9.2
+geopandas==1.1.2
+shapely==2.0.6
+pyogrio==0.10.0
+packaging==25.0
+ipykernel==7.1.0

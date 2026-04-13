@@ -315,82 +315,112 @@ def LEAF_production(ProdParams, CompParams):
   '''
 
   #==========================================================================================================
-  # Standardize the input parameters
+  # When region-specific dates are provided but no global months/start_dates exist, inject a placeholder
+  # so that standardize_params never returns None/None. Real per-region dates overwrite before any call.
+  #==========================================================================================================
+  has_region_dates_input = (
+      'region_start_dates' in ProdParams and
+      'region_end_dates'   in ProdParams and
+      len(ProdParams['region_start_dates']) > 0
+  )
+  no_global_dates = (
+      not ProdParams.get('months') and
+      not ProdParams.get('start_dates')
+  )
+
+  if has_region_dates_input and no_global_dates:
+    first_region      = next(iter(ProdParams['region_start_dates']))
+    placeholder_start = ProdParams['region_start_dates'][first_region][0]
+    placeholder_end   = ProdParams['region_end_dates'].get(first_region, [placeholder_start])[0]
+    ProdParams['start_dates'] = [placeholder_start]
+    ProdParams['end_dates']   = [placeholder_end]
+    ProdParams['monthly']     = False
+    print(f'<LEAF_production> Injected placeholder dates for standardization: '
+          f'{placeholder_start} / {placeholder_end}')
+
+  #==========================================================================================================
+  # Standardize the input parameters — tile_names must remain intact for this to succeed
   #==========================================================================================================
   usedParams = eoPM.get_LEAF_params(ProdParams, CompParams)
-  print('<LEAF_production> All input parameters = ', usedParams) 
+  print('<LEAF_production> All input parameters = ', usedParams)
 
   #==========================================================================================================
   # Produce vegetation biophysical parameter maps for each region and time window
   #==========================================================================================================
-  region_names = list(usedParams['regions'].keys())    # Get a list of region names
-  
+  region_names = list(usedParams['regions'].keys())
+
   # Check for region-specific dates
   has_region_dates = (
-      'region_start_dates' in usedParams and 
-      'region_end_dates' in usedParams and
+      'region_start_dates' in usedParams and
+      'region_end_dates'   in usedParams and
       len(usedParams['region_start_dates']) > 0
   )
-  
-  # Store default dates (if they exist)
-  default_start_dates = usedParams.get('start_dates', [])
-  default_end_dates = usedParams.get('end_dates', [])
 
-  for reg_name in region_names:                                 # Loop through each spatial region
-    usedParams = eoPM.set_spatial_region(usedParams, reg_name)  # Specify a current spatial region
-    
+  # If region-specific dates are driving this run, never fall back to default/placeholder
+  # dates for regions not explicitly listed. Only use defaults in true global-dates mode.
+  default_start_dates = [] if has_region_dates else usedParams.get('start_dates', [])
+  default_end_dates   = [] if has_region_dates else usedParams.get('end_dates',   [])
+
+  for reg_name in region_names:
+    usedParams = eoPM.set_spatial_region(usedParams, reg_name)
+
     # Check if region has region-specific dates
     if has_region_dates and reg_name in usedParams['region_start_dates']:
       # Get region-specific dates
       region_start_dates = usedParams['region_start_dates'][reg_name]
-      region_end_dates = usedParams['region_end_dates'].get(reg_name, region_start_dates)
-      
+      region_end_dates   = usedParams['region_end_dates'].get(reg_name, region_start_dates)
+
       # Use region-specific dates
       print(f'\n<LEAF_production> Using region-specific dates for {reg_name}')
       print(f'  Start dates: {region_start_dates}')
-      print(f'  End dates: {region_end_dates}')
-      
+      print(f'  End dates:   {region_end_dates}')
+
       usedParams['start_dates'] = region_start_dates
-      usedParams['end_dates'] = region_end_dates
+      usedParams['end_dates']   = region_end_dates
+      usedParams['monthly']     = False
       nTimes = len(region_start_dates)
-      
+
     elif default_start_dates and default_end_dates:
-      # Use default/global dates
+      # Use default/global dates — only reachable when region_start_dates was never set
       print(f'\n<LEAF_production> Using global dates for {reg_name}')
       usedParams['start_dates'] = default_start_dates
-      usedParams['end_dates'] = default_end_dates
+      usedParams['end_dates']   = default_end_dates
       nTimes = len(default_start_dates)
-      
+
     else:
-      # No dates found - skip this region
-      print(f'\n<LEAF_production> WARNING: Region {reg_name} has no dates (neither region-specific nor global)')
-      print(f'  SKIPPING this region')
+      # Tile-derived regions and any other region without explicit dates get skipped cleanly
+      print(f'\n<LEAF_production> WARNING: Region {reg_name} has no dates - SKIPPING')
       continue
-    
+
     # Process all time windows for this region
-    for TIndex in range(nTimes):                              # Loop through each time window
-      # Set monthly flag based on whether we're using region dates
-      usedParams['monthly'] = False  # Region-specific dates are not monthly
-      usedParams = eoPM.set_current_time(usedParams, TIndex)  # Specify a current time window
+    for TIndex in range(nTimes):
+      start_check = usedParams['start_dates'][TIndex]
+      end_check   = usedParams['end_dates'][TIndex]
 
-      # Produce and export products in a specified way (a compact image or separate images)      
+      if start_check is None or end_check is None:
+        print(f'<LEAF_production> WARNING: None date for {reg_name} at index {TIndex}, skipping.')
+        continue
+
+      # Explicitly refresh Criteria timeframe (guards against silent set_current_time failures)
+      usedParams = eoPM.set_current_time(usedParams, TIndex)
+      if 'Criteria' in usedParams:
+        usedParams['Criteria']['timeframe'] = f'{start_check}/{end_check}'
+        usedParams['Criteria']['region']    = usedParams['regions'][reg_name]
+
+      print(f'<LEAF_production> Processing {reg_name} | '
+            f'time window: {start_check} / {end_check}')
+
+      # Produce and export vegetation biophysical parameter maps
       out_style = str(usedParams['export_style']).lower()
-      if out_style.find('comp') > -1:
+      if 'comp' in out_style:
         print('\n<LEAF_production> Generate and export biophysical maps in one file .......')
-        #out_params = compact_params(mosaic, SsrData, ClassImg)
-
-        # Export the 64-bits image to either GD or GCS
-        #export_compact_params(fun_Param_dict, region, out_params, task_list)
-
-      else: 
-        # Produce and export vegetation biophysical parameetr maps for a time period and a spatial region
-        print('\n<LEAF_production> Generate and export separate vegetation biophysical maps......')        
+        # compact export not yet implemented
+      else:
+        print('\n<LEAF_production> Generate and export separate vegetation biophysical maps......')
         VBP_maps = create_LEAF_maps(usedParams, CompParams)
-      
-        # Export results for ONE region and ONE time window
         export_VegParamMaps(usedParams, VBP_maps)
-  
-  # Restore default dates after processing all regions
-  if default_start_dates and default_end_dates:
+
+  # Restore only real global dates — placeholder must not leak out of this function
+  if default_start_dates:
     usedParams['start_dates'] = default_start_dates
-    usedParams['end_dates'] = default_end_dates
+    usedParams['end_dates']   = default_end_dates
