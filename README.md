@@ -8,7 +8,7 @@ conda create -n leaf-env python=3.11.14
 conda activate leaf-env
 
 # Step 1: Core dependencies and Spatial libraries
-conda install -c conda-forge click==8.1.7 dask==2024.5.2 dask-jobqueue==0.9.0 numpy==1.24.4 odc-geo==0.4.8 odc-stac==0.3.10 pandas==2.2.3 psutil==5.9.8 pyproj==3.6.1 pystac-client==0.8.2 rasterio==1.3.10 Requests==2.32.3 rioxarray==0.15.6 stackstac==0.5.1 tqdm==4.66.4 urllib3==2.3.0 xarray==2024.6.0 "bokeh!=3.0.*,>=2.4.2" gdal==3.9.2 geopandas==1.1.2 shapely==2.0.6 pyogrio==0.10.0 packaging==25.0
+conda install -c conda-forge click==8.1.7 dask==2024.5.2 dask-jobqueue==0.9.0 numpy==1.24.4 odc-geo==0.4.8 odc-stac==0.3.10 pandas==2.2.3 psutil==5.9.8 pyproj==3.6.1 pystac-client==0.8.2 rasterio==1.3.10 requests==2.32.3 rioxarray==0.15.6 stackstac==0.5.1 tqdm==4.66.4 urllib3==2.3.0 xarray==2024.6.0 "bokeh!=3.0.*,>=2.4.2" gdal==3.9.2 geopandas==1.1.2 shapely==2.0.6 pyogrio==0.10.0 packaging==25.0
 
 # Step 2 (optional): Jupyter kernel
 conda install ipykernel==7.1.0
