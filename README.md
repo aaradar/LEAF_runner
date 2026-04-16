@@ -1,762 +1,348 @@
-# Parameter Preparation System - README
+# LEAF Runner — Parameter Preparation System
 
-# add S2A_OPER_GIP_TILPAR_MPC from HLS MGRS (file size too large)
 ## Installation
 
-**Step 0: Create and activate a Conda environment**
+**Option A: Conda environment (recommended)**
 ```bash
 conda create -n leaf-env python=3.11.14
 conda activate leaf-env
-```
 
-**Step 1: Core dependencies**
-```bash
-conda install -c conda-forge click==8.1.7 dask==2024.5.2 dask-jobqueue==0.9.0 numpy==1.24.4 odc-geo==0.4.8 odc-stac==0.3.10 pandas==2.2.3 psutil==5.9.8 pyproj==3.6.1 pystac-client==0.8.2 rasterio==1.3.10 Requests==2.32.3 rioxarray==0.15.6 stackstac==0.5.1 tqdm==4.66.4 urllib3==2.3.0 xarray==2024.6.0 "bokeh!=3.0.*,>=2.4.2" gdal==3.9.2 geopandas==1.1.2 shapely==2.0.6 pyogrio==0.10.0 packaging==25.0
-```
+# Step 1: Core dependencies
+conda install -c conda-forge click==8.1.7 dask==2024.5.2 dask-jobqueue==0.9.0 \
+  numpy==1.24.4 odc-geo==0.4.8 odc-stac==0.3.10 pandas==2.2.3 psutil==5.9.8 \
+  pyproj==3.6.1 pystac-client==0.8.2 rasterio==1.3.10 Requests==2.32.3 \
+  rioxarray==0.15.6 stackstac==0.5.1 tqdm==4.66.4 urllib3==2.3.0 \
+  xarray==2024.6.0 "bokeh!=3.0.*,>=2.4.2" gdal==3.9.2
 
-**Step 2: Connect the Conda environment to Jupyter**
-```bash
+# Step 2: Spatial libraries
+conda install -c conda-forge geopandas==1.1.2 shapely==2.0.6 pyogrio==0.10.0 packaging==25.0
+
+# Step 3 (optional): Jupyter kernel
 conda install ipykernel==7.1.0
 python -m ipykernel install --user --name leaf-env --display-name "Python (leaf-env)"
 ```
 
-**Step 3: Run notebooks**
-```bash
-jupyter notebook
-or 
-jupyter lab
-or 
-# Open in Anaconda manually
-```
-
-## To install with .yml
+**Option B: From environment file**
 ```bash
 conda env create -f environment.yml
 conda activate leaf-env
 python -m ipykernel install --user --name leaf-env --display-name "Python (leaf-env)"
 ```
 
+---
+
+## Running Production
+
+**Terminal**
+```bash
+conda activate leaf-env
+python run_production.py
+```
+
+**Jupyter**
+```bash
+jupyter notebook        # or jupyter lab
+# Open parameter_preparation.ipynb
+```
+
+---
+
 ## Overview
 
-This README documents the new Parameter Preparation System added to the LEAF production pipeline. The system provides pre-production parameter validation, temporal window generation, region loading from files, and polygon validation capabilities.
+The Parameter Preparation System handles pre-production validation, region loading, temporal window generation, and polygon filtering before calling `Production.py`.
 
-## New Files Added
+### Key Files
 
-**New Files:**
-- `prepare_params.py` - Starter functions for Mosiac Production Modularity
-- `parameter_preparation.ipynb` — KML-driven production example
-- `test_regions_kml.py` - Output validation tests for kml files
-- `LEAF_runner.png` - Flowchart of the new/updated files
-- `source/leaf_wrapper.py` — Region conversion module
-- `source/s2_tile_processor.py` — Process S2 tiles in tile mode
-- `source/polygon_validator.py` — Zero-area polygon detection and validation
-- `Sample Points/AfforestationSItesFixed.kml` — Example KML file with afforestation polygons
-- `Sample Points/FieldPoints32_2018.shp` — Example Shapefile with point geometries
-- `Sample Points/GTA.kml` — kml created from with GE
-- `Sample Points/ColdwaterBCregion.kml` — kml created from with GE
-- `TMX/TML_pipeline_100mbuffer.kml` — kml created from with GE
-- `Sample Points/ShapeTest.py` — kml/shp to csv testing
-- `testing/test_leaf_wrapper.py` — Output validation tests for both KML and SHP
-- `testing/test_negative_buffer.py` — Output validation tests for buffers and polygon integrity
-- `testing/params.py` — params and run time for 10m, 20m and 32/10 w 16/50 g
-
-**Updated Files:**
-- `Production.py` — kml date handling, key handling
-- `LEAFProduction` — kml runs with region dates now. Bug fixing
-- `SL2P_NetsTools.py` — cast LCMap to type int and print values
-- `eoParams.py` — fix fcover bug
-- `requirements.txt` — Two-step GeoPandas installation
+| File | Purpose |
+|------|---------|
+| `prepare_params.py` | Main orchestrator — validates, loads regions, generates windows |
+| `run_production.py` | Terminal entry point |
+| `parameter_preparation.ipynb` | Interactive notebook with 4 templates |
+| `source/leaf_wrapper.py` | Loads KML/SHP → LEAF region dicts |
+| `source/s2_tile_processor.py` | Converts regions to S2 MGRS tile footprints (`mode='tiles'`) |
+| `source/polygon_validator.py` | Filters zero-area polygons, creates CSV log |
+| `Production.py` | Main production script (region-specific date support) |
 
 ---
 
-### 1. **prepare_params.py** - Main Parameter Preparation Module
-**Location:** `./prepare_params.py`
+## ProdParams Reference
 
-**Purpose:** Orchestrates all parameter processing and validation before calling `Production.py main()`.
+### Required
 
-**Key Features:**
-- 4 temporal window generation modes
-- KML/Shapefile region loading
-- Temporal and spatial buffering
-- Date symmetry handling
-- Polygon validation and filtering
+| Parameter | Type | Example | Description |
+|-----------|------|---------|-------------|
+| `sensor` | str | `'S2_SR'` | Sensor type. Options: `'S2_SR'`, `'HLS_SR'`, `'HLSL30_SR'`, `'HLSS30_SR'`, `'MOD_SR'` |
+| `unit` | int | `2` | Data unit. `1` = TOA reflectance, `2` = surface reflectance |
+| `nbYears` | int | `-1` | Positive int for annual product, negative int for monthly product |
+| `regions` | str or dict | `'./sites.kml'` | Path to `.kml` / `.shp` file, or a pre-built region dict |
+| `resolution` | int | `30` | Output resolution in metres |
+| `projection` | str | `'EPSG:3979'` | Output coordinate reference system |
+| `out_folder` | str | `r'E:\output\run1'` | Directory where outputs are written |
 
-### 2. **polygon_validator.py** - Polygon Validation Module
-**Location:** `./source/polygon_validator.py`
+### Region / File Parameters
 
-**Purpose:** Filters zero-area polygons and creates processing logs.
+| Parameter | Type | Example | Description |
+|-----------|------|---------|-------------|
+| `file_variables` | list | `['SiteID', 'AsssD_1', 'AsssD_2']` | Three elements: `[id_column, start_date_column, end_date_column]`. Date columns can be `None` if not in the file. ID column cannot be `None`. |
+| `regions_start_index` | int | `0` | First region to load (0-based, inclusive). Default: `0` |
+| `regions_end_index` | int\|None | `50` | Last region to load (0-based, inclusive). `None` = load all |
+| `mode` | str | `'regions'` | `'regions'` (default) or `'tiles'` — see Processing Modes |
+| `s2_grid_path` | str | `'sentinel-2-grid.parquet'` | Path to the S2 MGRS tile grid parquet file. Required when `mode='tiles'` |
+| `subdivide_tiles` | bool | `False` | Subdivide S2 tile footprints into smaller sub-regions. Only applies when `mode='tiles'` |
 
-**Key Features:**
-- Zero-area polygon detection
-- Area calculation (with/without Shapely)
-- Processing log generation
-- CSV export of validation results
+### Temporal Parameters
 
-### 3. **leaf_wrapper.py** - Region File Handler
-**Location:** `./source/leaf_wrapper.py`
+| Parameter | Type | Example | Description |
+|-----------|------|---------|-------------|
+| `year` | int | `2023` | Base year for month-based temporal modes |
+| `months` | list[int] | `[6, 7, 8]` | Months to process (1–12). Used with `year` |
+| `num_years` | int | `3` | Repeat `months` across this many years starting from `year` (e.g., `year=2020`, `num_years=3` → 2020, 2021, 2022) |
+| `start_dates` | list[str] | `['2023-06-01']` | Custom window start dates in `YYYY-MM-DD` format |
+| `end_dates` | list[str] | `['2023-06-30']` | Custom window end dates in `YYYY-MM-DD` format |
+| `start_date` | str | `'2023-06-01'` | Single start date; end date is auto-copied to match |
+| `end_date` | str | `'2023-06-30'` | Single end date; start date is auto-copied to match |
+| `temporal_buffer` | list | `[[-7, 7]]` | Shift or replace date windows — see Temporal Buffer |
 
-**Purpose:** Reads KML/Shapefile files and converts them to LEAF-compatible region dictionaries.
+### Spatial Buffer
 
-**Key Features:**
-- KML and Shapefile support
-- Spatial buffering (meters)
-- Temporal buffer extraction from file attributes
-- Point-to-polygon conversion
-- Z-coordinate removal (3D → 2D)
-- Flexible ID handling (preserves string or integer IDs)
+| Parameter | Type | Example | Description |
+|-----------|------|---------|-------------|
+| `spatial_buffer_m` | int\|float | `-20` | Buffer applied to region geometries in metres before processing. **Negative** = erode (shrink inward); **positive** = dilate (expand outward). Reprojected to EPSG:3979 (Canada Atlas Lambert) for metric accuracy, then back to original CRS. If a negative buffer collapses a polygon to a point, it is flagged in the processing log and skipped. |
 
+### Output Parameters
 
-### 3.1. **s2_tile_processor.py** - Region File Handler
-**Location:** `./source/s2_tile_processor.py`
-
-**Purpose:** Reads regions dict and dates and converts them to LEAF-compatible s2 grid tiles.
-
-**Key Features:**
-- parquet file support
-- Conversion of dict into tile grids
-- Handles mode ='tiles' conversion by finding all S2 MGRS tiles that intersect 
-- selected regions and returning their tile footprints instead of the regions themselves.
-- Flexible ID handling (preserves string or integer IDs)
-
-### 4. **Production.py** - Updated Main Production Script
-**Location:** `./Production.py`
-
-**Purpose:** Main production orchestrator with region-specific date support.
-
-**Key Changes:**
-- Added region-specific start/end date handling
-- Temporal buffer integration
-- Enhanced region processing loop
-
-### 5. **parameter_preparation.ipynb** - Interactive Notebook
-**Location:** `./parameter_preparation.ipynb`
-
-**Purpose:** Jupyter notebook with 4 pre-configured parameter templates for different use cases.
-
-**Templates:**
-1. Single Year Monthly Mosaics
-2. Custom Date Ranges
-3. Single Date Windows
-4. Multi-Year Monthly Mosaics
+| Parameter | Type | Example | Description |
+|-----------|------|---------|-------------|
+| `prod_names` | list[str] | `['mosaic']` | Products to generate. Options: `'mosaic'`, `'LAI'`, `'fCOVER'`, `'fAPAR'`, `'Albedo'` |
+| `out_datatype` | str | `'int16'` | Output raster data type (e.g., `'int16'`, `'float32'`) |
+| `IncludeAngles` | bool | `False` | Include solar/view angle bands in output |
+| `output_type` | str | `'geotiff'` | Output format: `'geotiff'` or `'csv'` |
+| `csv_scale` | int | `30` | Pixel size for CSV export (typically same as `resolution`) |
+| `csv_dropNulls` | bool | `True` | Skip masked/nodata pixels in CSV output |
+| `csv_max_pixels` | int | `100_000` | Max pixels exported per region in CSV mode. Reduce for quick test runs |
 
 ---
 
-## System Architecture
+## CompParams Reference
 
-### Data Flow Diagram
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    USER INPUT                                │
-│  • ProdParams (sensor, year, months, regions)               │
-│  • CompParams (workers, memory, debug)                       │
-│  • KML/SHP files (optional)                                  │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│              prepare_params.py                               │
-│         prepare_production_params()                          │
-└─────────────────────────────────────────────────────────────┘
-                     │
-         ┌───────────┼───────────┐
-         │           │           │
-         ▼           ▼           ▼
-    ┌────────┐  ┌────────┐  ┌────────┐
-    │ Step 1 │  │ Step 2 │  │ Step 3 │
-    │ Regions│  │ Dates  │  │Symmetry│
-    └────────┘  └────────┘  └────────┘
-         │           │           │
-         │           │           │
-         └───────────┼───────────┘
-                     │
-                     ▼
-         ┌───────────────────────┐
-         │       Step 4          │
-         │  Polygon Validation   │
-         └───────────────────────┘
-                     │
-                     ▼
-         ┌───────────────────────┐
-         │   Validated Params    │
-         │   + Processing Log    │
-         └───────────────────────┘
-                     │
-                     ▼
-         ┌───────────────────────┐
-         │   Production.py       │
-         │      main()           │
-         └───────────────────────┘
-                     │
-                     ▼
-         ┌───────────────────────┐
-         │   Mosaic Generation   │
-         └───────────────────────┘
-```
+| Parameter | Type | Example | Description |
+|-----------|------|---------|-------------|
+| `number_workers` | int | `10` | Number of Dask workers to spawn |
+| `debug` | bool | `True` | Enable verbose debug output |
+| `entire_tile` | bool | `False` | Process the full S2 tile extent rather than clipping to the region polygon |
+| `nodes` | int | `1` | Number of compute nodes (for HPC/cluster use) |
+| `node_memory` | str | `'50G'` | Memory allocated per node (e.g., `'16G'`, `'50G'`) |
+| `chunk_size` | dict | `{'x': 512, 'y': 512}` | Dask spatial chunk size in pixels. Smaller chunks use less memory; larger chunks reduce overhead |
 
 ---
 
-## Function Connection Map
+## Processing Modes
 
-### Connection Map
+### `mode='regions'` (default)
+Each KML/SHP polygon is used directly as a LEAF processing region. Output is clipped to each polygon's extent.
 
-```
-prepare_params.py
-├── imports leaf_wrapper.py
-│   └── regions_from_kml()
-│       └── LeafWrapper class
-│           ├── load() - reads KML/SHP
-│           ├── _apply_buffer() - spatial buffering
-│           └── to_region_dict() - converts to LEAF format
-│
-├── imports s2_tile_processor.py
-│   ├── resolve_s2_tiles() - tiles according to regions
-│   └── _find_tile_name_column() - finds tile name columns
-│
-├── imports polygon_validator.py
-│   ├── filter_valid_polygons() - removes zero-area polygons
-│   ├── create_processing_log() - generates CSV logs
-│   ├── is_zero_area_polygon() - validation logic
-│   └── calculate_polygon_area() - area computation
-│
-└── provides functions to Production.py
-    ├── prepare_production_params() - main orchestrator
-    ├── handle_regions_from_file() - region loading
-    ├── form_time_windows() - 4 temporal modes
-    ├── ensure_date_symmetry() - date validation
-    └── validate_and_filter_polygons() - polygon filtering
+### `mode='tiles'`
+Finds all S2 MGRS tiles that intersect the input polygons and processes those full tile footprints instead. Useful for full-tile mosaics aligned to the S2 grid.
 
-Production.py
-├── imports prepare_params.py
-├── calls prepare_production_params() (optional)
-└── main() - receives validated parameters
-    ├── Uses region_start_dates (if available)
-    ├── Uses region_end_dates (if available)
-    └── Falls back to default start_dates/end_dates
-
-parameter_preparation.ipynb
-├── imports prepare_params.py
-└── provides 4 templates for different use cases
-```
-
----
-
-## Function Reference
-
-### prepare_params.py Functions
-
-#### `prepare_production_params(ProdParams, CompParams)`
-**Main orchestration function**
-
-**Steps:**
-1. Load regions from KML/SHP files (if applicable)
-2. Generate temporal windows (4 modes)
-3. Ensure date symmetry
-4. Validate and filter polygons
-
-**Returns:**
 ```python
-{
-    'ProdParams': validated_params,
-    'CompParams': comp_params,
-    'processing_log': dataframe_or_list
-}
+'mode': 'tiles',
+'s2_grid_path': 'sentinel-2-grid.parquet',
+'subdivide_tiles': False,   # True to further split tile footprints
 ```
 
-**Returns `None` if validation fails (e.g., all polygons are zero-area)**
+In tiles mode, three extra keys are stored in `ProdParams` for reference after processing:
+
+| Key | Contents |
+|-----|---------|
+| `regions_ref` | Original polygon geometries keyed by polygon ID |
+| `region_start_dates_ref` | Start dates keyed by original polygon ID |
+| `region_end_dates_ref` | End dates keyed by original polygon ID |
+
+These mirror the live tile-keyed results and are useful for tracing which tiles came from which original polygon.
 
 ---
 
-#### `handle_regions_from_file(ProdParams)`
-**Handles KML/Shapefile-based region input**
+## Temporal Modes
 
-**What it does:**
-1. Detects if `regions` is a file path (.kml or .shp)
-2. Calls `leaf_wrapper.regions_from_kml()` to load regions
-3. Applies temporal buffer to region-specific dates
-4. Updates ProdParams with loaded regions
+`form_time_windows()` selects a mode based on which keys are present in `ProdParams`:
 
-**Parameters used:**
-- `ProdParams['regions']` - path to KML/SHP file
-- `ProdParams['regions_start_index']` - start position
-- `ProdParams['regions_end_index']` - end position
-- `ProdParams['spatial_buffer_m']` - spatial buffer in meters
-- `ProdParams['temporal_buffer']` - [days_before, days_after] or [["date1", "date2"], ...]
-- `ProdParams['file_variables']` - [id_column, start_date_column, end_date_column]
+| Mode | Keys Required | Behaviour |
+|------|--------------|-----------|
+| 1 — Monthly | `year` + `months` | One window per month (1st → last day of month) |
+| 2 — Custom ranges | `start_dates` + `end_dates` | Used as-is |
+| 3 — Single date | `start_date` OR `end_date` | Missing end is auto-copied from the other |
+| 4 — Multi-year monthly | `year` + `months` + `num_years` | Repeats each month across N consecutive years |
 
-**Returns:** Updated ProdParams with regions dictionary
+If none of these keys are found, temporal generation is skipped and region-specific dates from the file are used directly.
 
----
+### Temporal Buffer
 
-#### `form_time_windows(ProdParams)`
-**Creates start/end dates based on 4 temporal modes**
+Applies on top of whichever mode above is active. Two sub-modes:
 
-**Mode 1: Single Year Monthly Mosaics**
+**Offset mode** — integers, shift each window's edges by N days:
 ```python
-ProdParams = {
-    'year': 2023,
-    'months': [6, 7, 8]
-}
-# Generates:
-# start_dates = ['2023-06-01', '2023-07-01', '2023-08-01']
-# end_dates = ['2023-06-30', '2023-07-31', '2023-08-31']
+'temporal_buffer': [[-7, 7]]                      # widen each window by ±7 days
+'temporal_buffer': [[-5, 5], [-10, 10], [0, 15]]  # each region date becomes 3 windows
+```
+When multiple pairs are provided, each original date pair expands into that many windows. Multiple pairs only apply to region-specific dates (from file); for global `year`/`months` windows, only a single pair is supported.
+
+**Override mode** — date strings, replace all dates with fixed windows regardless of file dates:
+```python
+'temporal_buffer': [["2025-08-01", "2025-08-31"]]
+'temporal_buffer': [["2024-04-15", "2024-07-15"], ["2024-08-01", "2024-09-01"]]
 ```
 
-**Mode 2: Custom Date Ranges**
-```python
-ProdParams = {
-    'start_dates': ['2023-06-01', '2023-08-15'],
-    'end_dates': ['2023-06-30', '2023-09-15']
-}
-# Uses dates as-is
-```
-
-**Mode 3: Single Date Auto-Generation**
-```python
-ProdParams = {
-    'start_date': '2023-06-01'
-    # end_date is auto-generated to match
-}
-# OR
-ProdParams = {
-    'end_date': '2023-06-30'
-    # start_date is auto-generated to match
-}
-```
-
-**Mode 4: Multi-Year Monthly Mosaics**
-```python
-ProdParams = {
-    'year': 2020,
-    'months': [6, 7],
-    'num_years': 3
-}
-# Generates:
-# 2020-06, 2020-07, 2021-06, 2021-07, 2022-06, 2022-07
-```
-
-**Temporal Buffer Application:**
-If `temporal_buffer` is specified, it can work in two modes:
-
-**Offset Mode (apply days before/after):**
-```python
-ProdParams['temporal_buffer'] = [[-5, 5]]  # [days_before, days_after]
-# '2023-06-01' becomes '2023-05-27' (start)
-# '2023-06-30' becomes '2023-07-05' (end)
-
-# Or multiple buffers to multiply windows:
-ProdParams['temporal_buffer'] = [[-5, 5], [-10, 10], [0, 15]]
-# Each original date pair expands to 3 windows
-```
-
-**Override Mode (replace all dates):**
-```python
-ProdParams['temporal_buffer'] = [["2024-04-15", "2024-07-15"], ["2024-08-01", "2024-09-01"]]
-# All regions get these exact 2 date windows, ignoring original dates
-```
-
----
-
-#### `ensure_date_symmetry(ProdParams)`
-**Ensures start_dates and end_dates are symmetric**
-
-**What it does:**
-- If only `start_dates` exists → copies to `end_dates`
-- If only `end_dates` exists → copies to `start_dates`
-- If both exist → no change
-
----
-
-#### `validate_and_filter_polygons(ProdParams)`
-**Validates and filters zero-area polygons**
-
-**What it does:**
-1. Creates processing log CSV
-2. Filters out invalid polygons
-3. Updates ProdParams with only valid regions
-4. Filters region-specific dates to match valid regions
-
-**Returns:**
-- `(ProdParams, processing_log)` if valid polygons exist
-- `(None, processing_log)` if all polygons are invalid
-
-**Processing Log CSV Columns:**
-- `region_id` - Region identifier
-- `date` - Processing date
-- `area_m2` - Polygon area in square meters
-- `will_process` - Boolean (True/False)
-- `status` - 'QUEUED' or 'SKIPPED'
-- `skip_reason` - Why polygon was skipped
-- `timestamp` - When log entry was created
-
----
-
-### polygon_validator.py Functions
-
-#### `calculate_polygon_area(coordinates)`
-**Calculates polygon area in square meters**
-
-**Uses:**
-- Shapely (if available) - preferred method
-- Shoelace formula (fallback) - works without Shapely
-
-**Returns:** Area in square meters (approximate for WGS84)
-
----
-
-#### `is_zero_area_polygon(region_data)`
-**Checks if polygon has zero or near-zero area**
-
-**Checks for:**
-1. All coordinates identical (degenerate polygon)
-2. Fewer than 3 unique points
-3. Area below threshold (default: 1 m²)
-
-**Returns:** `(is_zero_area, area_m2, reason)`
-
----
-
-#### `filter_valid_polygons(regions)`
-**Filters out zero-area polygons**
-
-**Returns:** `(valid_regions_dict, validation_log)`
-
----
-
-#### `create_processing_log(regions, end_dates, output_path)`
-**Creates comprehensive processing log CSV**
-
-**Columns:**
-- region_id, date, area_m2, will_process, status, skip_reason, timestamp
-
-**Saves to:** CSV file at `output_path`
-
----
-
-### leaf_wrapper.py Functions
-
-#### `regions_from_kml(kml_file, start, end, prefix, spatial_buffer_m, file_variables)`
-**Load KML/Shapefile and return polygon regions**
-
-**Parameters:**
-- `kml_file` - Path to KML or Shapefile
-- `start` - Starting position (0-based, inclusive)
-- `end` - Ending position (0-based, inclusive, None = all)
-- `prefix` - Prefix for region names (default: "region")
-- `spatial_buffer_m` - Buffer size in meters (can be negative)
-- `file_variables` - List of [id_column, start_date_column, end_date_column]
-
-**Returns:** `(regions_dict, region_start_dates, region_end_dates)`
-
-**Example:**
-```python
-regions, starts, ends = regions_from_kml(
-    'sites.kml',
-    start=0,
-    end=5,
-    spatial_buffer_m=-20,  # Negative buffer = erosion
-    file_variables=['SiteID', 'AsssD_1', 'AsssD_2']  # Column names to use
-)
-# Returns regions 0-5 with 20m erosion applied
-# Region names will be: region20, region39, region45, etc. (using SiteID values)
-```
-
-**ID Handling:**
-- IDs are preserved as-is from the file (string or integer)
-- If ID is a float like 20.0, it's converted to int: `region20`
-- If ID is an integer like 45, kept as int: `region45`
-- If ID is a string like "ID_10001", kept as string: `regionID_10001`
-- Regions are sorted numerically based on the numeric portion of the ID
-
-**Important:** Use the correct ID column for your file!
-- For KML with `SiteID`: `file_variables=['SiteID', 'AsssD_1', 'AsssD_2']`
-- For KML with `TARGET_FID`: `file_variables=['TARGET_FID', 'start_date', 'end_date']`
-- For SHP with custom ID: `file_variables=['MyID', 'date_start', 'date_end']`
-
----
-
-#### `LeafWrapper` Class
-
-**Constructor:**
-```python
-wrapper = LeafWrapper(
-    polygon_file, 
-    spatial_buffer_m=None,
-    file_variables=['ID', 'start_date', 'end_date']
-)
-```
-
-**Methods:**
-
-##### `load()`
-Loads KML or Shapefile into GeoDataFrame
-- Drops Z coordinates (3D → 2D)
-- Applies spatial buffer if specified
-- Returns `self` for chaining
-
-##### `_apply_buffer()`
-Applies spatial buffer to geometries
-- Converts to EPSG:3979 (Canada Atlas Lambert)
-- Applies metric buffer
-- Handles negative buffers (creates zero-area points at centroid)
-- Converts back to original CRS
-
-##### `to_region_dict(use_target_fid=True)`
-Converts geometries to LEAF-compatible dictionary
-
-**Extracts:**
-- Region coordinates
-- ID from column specified in `file_variables[0]`
-- Start date from column specified in `file_variables[1]`
-- End date from column specified in `file_variables[2]`
-
-**Returns:**
-```python
-{
-    'region_id': {
-        'r_id': region_id,
-        'coordinates': [[[x1, y1], [x2, y2], ...]],
-        'start_date': 'YYYY-MM-DD',  # From file_variables[1]
-        'end_date': 'YYYY-MM-DD'     # From file_variables[2]
-    }
-}
-```
-
----
-
-### Production.py Changes
-
-#### Enhanced Region Processing Loop
-
-**Before:**
-```python
-for reg_name in region_names:
-    usedParams = eoPM.set_spatial_region(usedParams, reg_name)
-    for TIndex in range(nTimes):
-        usedParams = eoPM.set_current_time(usedParams, TIndex)
-        eoMz.one_mosaic(usedParams, CompParams)
-```
-
-**After (with region-specific dates):**
-```python
-for reg_name in region_names:
-    usedParams = eoPM.set_spatial_region(usedParams, reg_name)
-    
-    # Check for region-specific dates
-    if has_region_dates and reg_name in usedParams['region_start_dates']:
-        # Use region-specific dates
-        region_start_dates = usedParams['region_start_dates'][reg_name]
-        region_end_dates = usedParams['region_end_dates'].get(reg_name)
-        usedParams['start_dates'] = region_start_dates
-        usedParams['end_dates'] = region_end_dates
-        nTimes = len(region_start_dates)
-    else:
-        # Skip regions without dates
-        print(f'WARNING: Region {reg_name} has no region-specific dates - SKIPPING')
-        continue
-    
-    for TIndex in range(nTimes):
-        usedParams = eoPM.set_current_time(usedParams, TIndex)
-        eoMz.one_mosaic(usedParams, CompParams)
-```
+Both modes apply in parallel to live (tile-keyed) and ref (polygon-keyed) date dicts when `mode='tiles'`.
 
 ---
 
 ## Usage Examples
 
-### Example 1: Basic Usage with file_variables
+### Minimal — regions mode, terminal run
 
-```python
-from prepare_params import prepare_production_params
-from Production import main
-
-ProdParams = {
-    'sensor': 'HLS_SR',
-    'year': 2023,
-    'months': [6, 7, 8],
-    'regions': './data/sites.kml',
-    'regions_start_index': 0,
-    'regions_end_index': 10,
-    'file_variables': ['SiteID', 'AsssD_1', 'AsssD_2'],  # IMPORTANT: Specify column names!
-    'resolution': 30,
-    'projection': 'EPSG:3979',
-    'out_folder': './output'
-}
-
-CompParams = {'number_workers': 10, 'debug': True}
-
-result = prepare_production_params(ProdParams, CompParams)
-if result:
-    main(result['ProdParams'], result['CompParams'])
+Edit `run_production.py` then:
+```bash
+conda activate leaf-env
+python run_production.py
 ```
-
-### Example 2: Spatial and Temporal Buffers
 
 ```python
 ProdParams = {
     'sensor': 'S2_SR',
-    'regions': './sites.kml',
-    'file_variables': ['SiteID', 'AsssD_1', 'AsssD_2'],
-    'spatial_buffer_m': -20,        # 20m erosion
-    'temporal_buffer': [-7, 7],     # 7 days before/after each date
+    'unit': 2,
+    'nbYears': -1,
+    'regions': r'Sample Points\AfforestationSItesFixed.kml',
+    'file_variables': ['TARGET_FID', 'AsssD_1', 'AsssD_2'],
+    'regions_start_index': 0,
+    'regions_end_index': 10,
+    'mode': 'regions',
+    'temporal_buffer': [["2025-08-01", "2025-08-31"]],
     'resolution': 30,
-    'out_folder': './output'
+    'projection': 'EPSG:3979',
+    'prod_names': ['mosaic'],
+    'out_folder': r'E:\output\run1',
+    'out_datatype': 'int16',
+    'output_type': 'geotiff',
+    'IncludeAngles': False,
+}
+CompParams = {
+    'number_workers': 10,
+    'debug': True,
+    'entire_tile': False,
+    'nodes': 1,
+    'node_memory': '50G',
+    'chunk_size': {'x': 512, 'y': 512},
 }
 ```
 
-### Example 3: Multi-Year Processing with Region Dates
-
+### Tiles mode with spatial erosion
 ```python
 ProdParams = {
     'sensor': 'HLS_SR',
+    'unit': 2,
+    'nbYears': -1,
     'regions': './sites.kml',
     'file_variables': ['SiteID', 'AsssD_1', 'AsssD_2'],
-    'num_years': 3,                 # Expand dates across 2020-2022
+    'mode': 'tiles',
+    's2_grid_path': 'sentinel-2-grid.parquet',
+    'subdivide_tiles': False,
+    'spatial_buffer_m': -20,                            # erode polygons 20m before tile lookup
+    'temporal_buffer': [["2024-06-01", "2024-08-31"]],
     'resolution': 30,
-    'out_folder': './output'
+    'projection': 'EPSG:3979',
+    'prod_names': ['mosaic', 'LAI'],
+    'out_folder': './output',
+    'out_datatype': 'int16',
+    'output_type': 'geotiff',
 }
-# If KML has dates like 2020-06-01, will also generate 2021-06-01 and 2022-06-01
 ```
 
-### Example 4: Multiple Temporal Buffers (Window Expansion)
-
+### Multi-year monthly mosaics (no dates in file)
 ```python
 ProdParams = {
-    'sensor': 'HLS_SR',
+    'sensor': 'S2_SR',
+    'unit': 2,
+    'nbYears': -1,
+    'year': 2020,
+    'months': [6, 7, 8],
+    'num_years': 3,                     # generates Jun–Aug for 2020, 2021, 2022
     'regions': './sites.kml',
-    'file_variables': ['SiteID', 'AsssD_1', 'AsssD_2'],
-    'temporal_buffer': [[-5, 5], [-10, 10], [0, 15]],  # Multiply each date to 3 windows
-    'resolution': 30,
-    'out_folder': './output'
+    'file_variables': ['SiteID', None, None],  # no date columns in file
+    'mode': 'regions',
+    'resolution': 10,
+    'projection': 'EPSG:3979',
+    'prod_names': ['mosaic'],
+    'out_folder': './output',
+    'out_datatype': 'int16',
+    'output_type': 'geotiff',
 }
-# Each region date expands to 3 windows with different buffers
 ```
 
-### Example 5: Date Override Mode
-
+### CSV export
 ```python
 ProdParams = {
-    'sensor': 'HLS_SR',
-    'regions': './sites.kml',
-    'file_variables': ['SiteID', 'AsssD_1', 'AsssD_2'],
-    'temporal_buffer': [["2024-04-15", "2024-07-15"], ["2024-08-01", "2024-09-01"]],
-    'resolution': 30,
-    'out_folder': './output'
+    ...
+    'output_type': 'csv',
+    'csv_scale': 30,
+    'csv_dropNulls': True,
+    'csv_max_pixels': 50_000,   # lower for faster test runs
 }
-# All regions get these exact 2 date windows, ignoring dates from KML
 ```
 
 ---
 
-## Processing Log Example
+## Processing Log
 
-After running `validate_and_filter_polygons()`, a CSV log is created:
+After polygon validation, a CSV is written to `out_folder/polygon_processing_log.csv`:
 
-```csv
-region_id,date,area_m2,will_process,status,skip_reason,timestamp
-region0,2023-06-30,0.00,False,SKIPPED,All coordinates identical (point not polygon),2025-02-09T10:30:00
-region1,2023-06-30,0.00,False,SKIPPED,Only 1 unique coordinate(s),2025-02-09T10:30:00
-region20,2023-06-30,12500000.00,True,QUEUED,Valid polygon,2025-02-09T10:30:00
-region39,2023-06-30,8750000.00,True,QUEUED,Valid polygon,2025-02-09T10:30:00
 ```
-
-**Console Output:**
-```
-Summary:
-   Total region-date combinations: 4
-   Valid for processing: 2
-   Skipped (zero area): 2
-
-Zero-area regions detected:
-   - region0
-   - region1
-
-Proceeding with 2 valid region(s) out of 4 total
+region_id, date,       area_m2,      will_process, status,  skip_reason
+region0,   2023-06-30, 0.00,         False,        SKIPPED, All coordinates identical
+region20,  2023-06-30, 12500000.00,  True,         QUEUED,  Valid polygon
 ```
 
 ---
 
-## Error Handling
+## Parameter Validation
 
-### All Polygons Invalid
+`prepare_production_params()` runs validation as Step 1/4 before any file I/O. It returns `None` and prints a numbered error list on failure.
 
-```python
-result = prepare_production_params(ProdParams, CompParams)
+| Field | Rule |
+|-------|------|
+| `regions` | `.kml`, `.shp`, or dict; file must exist on disk |
+| `file_variables` | Exactly 3 elements; first (ID) cannot be `None`; date elements can be `None` |
+| `regions_start_index` | Integer ≥ 0 |
+| `regions_end_index` | Integer ≥ `regions_start_index`, or `None` |
+| `spatial_buffer_m` | Number (int or float) |
+| `temporal_buffer` | List of `[int, int]` pairs OR `["YYYY-MM-DD", "YYYY-MM-DD"]` pairs — cannot mix types; end date must be after start date in override mode |
+| `num_years` | Integer ≥ 1 |
+| `mode` | `'regions'` or `'tiles'` |
 
-if result is None:
-    print("ERROR: All polygons have zero area!")
-    # Check processing log for details
-    # Typical causes:
-    # 1. All coordinates are identical (points, not polygons)
-    # 2. Negative buffer too large (collapses polygons)
-    # 3. Invalid KML/SHP file format
-```
-
-### File Not Found
-
-```python
-# If KML file doesn't exist:
-"""
-ERROR: Region file not found: ./sites.kml
-Current working directory: /home/user/project
-Please provide a valid file path.
-"""
-```
-
-### Wrong Column Names
-
-```python
-# If file_variables specifies non-existent columns:
-# Region IDs will fall back to index (0, 1, 2, ...)
-# Dates will be None
-
-# SOLUTION: Check your KML/SHP file's column names first!
-```
-
-### Invalid Date Range
-
-```python
-# If start_date > end_date, dates are automatically swapped:
-"""
-<form_time_windows> Swapping dates for window 0: 
-  2023-08-01 <-> 2023-06-01
-"""
-```
+---
 
 ## Troubleshooting
 
-**All polygons skipped**
-- Check processing log for skip reasons
-- Reduce negative buffer size
-- Verify KML/SHP file contains valid polygons
+**Wrong region IDs (region0, region1 instead of region20, region39)**
+→ `file_variables[0]` is the wrong column. `TARGET_FID` is a row counter — use your actual site ID column (e.g., `SiteID`)
 
-**Wrong region IDs showing (e.g., region0, region1 instead of region20, region39)**
-- Check `file_variables` parameter - you're using the wrong ID column
-- Use `file_variables=['SiteID', ...]` not `['TARGET_FID', ...]`
-- TARGET_FID is just a row counter, not the actual site ID
+**Region-specific dates not applied**
+→ Check that your KML has date attribute columns; verify column names match `file_variables[1]` and `[2]`; dates must be `YYYY-MM-DD`
 
-**Region-specific dates not working**
-- Ensure KML has the start date column (e.g., `AsssD_1`)
-- Ensure KML has the end date column (e.g., `AsssD_2`)
-- Specify correct column names in `file_variables`
-- Check Sentinel-2 or Landsat has data for the specified dates
-- Dates must be in 'YYYY-MM-DD' format
+**All polygons skipped / zero area**
+→ Check `polygon_processing_log.csv`; if using `spatial_buffer_m`, the negative value may be too large and collapsing polygons; verify file contains polygons (not just points)
+
+**Empty regions after tiles mode**
+→ Verify `s2_grid_path` parquet exists and spatially covers your regions
+
+**Multiple temporal buffer pairs ignored for global windows**
+→ Multiple offset pairs only expand region-specific dates (from file). For global `year`/`months` windows, use a single pair (e.g., `[[-5, 5]]`)
 
 **Dates swapped automatically**
-- This is intentional when start_date > end_date
-- Check console output for swap messages
+→ Intentional — if `start_date > end_date`, they are swapped with a console warning
 
-**String IDs not working (getting numbers instead)**
-- This should now work correctly
-- IDs are preserved as-is from the file
-- Check that your ID column contains the values you expect
+**`result` is `None`**
+→ Either validation failed (read the printed error list) or all polygons are zero-area (check `polygon_processing_log.csv`)
 
 ---
 
-## Summary
-
-The Parameter Preparation System provides automated parameter processing, validation, and region loading for LEAF production. Key capabilities include flexible temporal modes, spatial/temporal buffering, polygon validation, comprehensive error logging, and flexible ID handling that preserves both string and integer identifiers.
-
-**Key Takeaway:** Always specify `file_variables` correctly to match your KML/SHP file's column names!
-
----
+> **Key rule:** Always set `file_variables` to match your KML/SHP column names exactly. Use `['MyID', None, None]` if the file has no date attributes.

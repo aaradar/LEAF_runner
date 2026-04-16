@@ -107,3 +107,5 @@ if __name__ == '__main__':
     # STEP 2 — run production  (mirrors notebook cells 4-5)
     print(ProdParams)
     main(ProdParams, CompParams)
+
+    print("\nProduction run complete")

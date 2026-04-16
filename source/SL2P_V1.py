@@ -2,7 +2,7 @@ import pickle
 import os
 
 
-VALID_DS_NAMES = ['S2_SR', 'S2_SR_10M', 'L8_SR', 'L9_SR', 'HLS_SR']
+VALID_DS_NAMES = ['S2_SR', 'S2_SR_10M', 'L8_SR', 'L9_SR', 'HLS_30M']
 VALID_VP_NAMES = ['LAI', 'FAPAR', 'FCOVER', 'ALBEDO', 'CCC', 'CWC', 'DASF']
 
 
