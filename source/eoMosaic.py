@@ -1978,9 +1978,20 @@ def _get_tile_regions(inParams, inMosaic=None):
         if has_date_refs:
             reg_start_raw = start_ref.get(reg_name, '')
             reg_end_raw   = end_ref.get(reg_name,   '')
-            reg_start = str(reg_start_raw[0]) if isinstance(reg_start_raw, list) else str(reg_start_raw)
-            reg_end   = str(reg_end_raw[0])   if isinstance(reg_end_raw,   list) else str(reg_end_raw)
-            if reg_start != tile_start or reg_end != tile_end:
+
+            # Normalise to lists so we can check all dates for this region,
+            # not just index 0.  A region can appear in multiple time windows
+            # (e.g. ['2017-08-01', '2018-08-01', '2019-08-01']).
+            reg_starts = reg_start_raw if isinstance(reg_start_raw, list) else [reg_start_raw]
+            reg_ends   = reg_end_raw   if isinstance(reg_end_raw,   list) else [reg_end_raw]
+
+            # Pass if ANY (start, end) pair in the region's list matches the
+            # current tile window.  Previously only index 0 was checked.
+            matched = any(
+                str(s) == tile_start and str(e) == tile_end
+                for s, e in zip(reg_starts, reg_ends)
+            )
+            if not matched:
                 skipped_date += 1
                 continue
 

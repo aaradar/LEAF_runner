@@ -176,67 +176,84 @@ def SL2P_estimation(Params):
 # 
 #############################################################################################################
 def export_VegParamMaps(inParams, inXrDS):
-  '''
-    This function exports the band images of a mosaic into separate GeoTiff files.
+    print('\n\n<export_VegParamMaps> the data variables in given VP map: ', inXrDS.data_vars)
 
-    Args:
-      inParams(dictionary): A dictionary containing all required execution parameters;
-      inXrDS(xrDS): A xarray dataset object containing mosaic images to be exported.'''
-  
-  print('\n\n<export_VegParamMaps> the data variables in given VP map: ', inXrDS.data_vars)
-  #==========================================================================================================
-  #
-  #==========================================================================================================  
-  VP_scalers = {}
-  for s in inXrDS.data_vars:
-    S = s.upper()
-    if 'LAI' in S:
-      VPOptions = SL2P_V1.make_VP_options('lai')
-      VP_scalers[s] = VPOptions['scale_factor']
-    elif 'FAPAR' in S or 'FCOVER' in S or 'ALBEDO' in S:  
-      VPOptions = SL2P_V1.make_VP_options('FAPAR')
-      VP_scalers[s] = VPOptions['scale_factor']
+    VP_scalers = {}
+    for s in inXrDS.data_vars:
+        S = s.upper()
+        if 'LAI' in S:
+            VPOptions = SL2P_V1.make_VP_options('lai')
+            VP_scalers[s] = VPOptions['scale_factor']
+        elif 'FAPAR' in S or 'FCOVER' in S or 'ALBEDO' in S:
+            VPOptions = SL2P_V1.make_VP_options('FAPAR')
+            VP_scalers[s] = VPOptions['scale_factor']
+        else:
+            VP_scalers[s] = 1
+
+    mode = str(inParams.get('mode', 'regions')).lower()
+
+    if mode == 'tiles':
+        # Get the regions that intersect this tile and match the current time window
+        tile_regions = eoMz._get_tile_regions(inParams, inXrDS)
+
+        if not tile_regions:
+            print('<export_VegParamMaps> tiles mode: no matching regions for this tile/time window — skipping.')
+            return
+
+        tile_label = str(inParams.get('current_region', ''))
+
+        for reg_name, proj_geom in tile_regions.items():
+            print(f'\n<export_VegParamMaps> tiles mode — clipping to region: {reg_name} (tile: {tile_label})')
+            region_params = {
+                **inParams,
+                '_clip_geom':    proj_geom,
+                '_region_label': reg_name,
+                '_tile_label':   tile_label,
+            }
+            _write_VP_geotiffs(region_params, inXrDS, VP_scalers)
     else:
-      VP_scalers[s] = 1
+        _write_VP_geotiffs(inParams, inXrDS, VP_scalers)
 
-  #==========================================================================================================
-  # Apply projection
-  #==========================================================================================================
-  rio_xrDS = inXrDS.rio.write_crs(inParams['projection'], inplace=True)  # Assuming WGS84 for this example
+##############################################################################################################
+# Description: This function writes per-band GeoTIFFs for one region (after clipping if needed).
+##############################################################################################################
+def _write_VP_geotiffs(inParams, inXrDS, VP_scalers):
+    """Write per-band GeoTIFFs for one region (after clipping if needed)."""
+    # Clip if a geometry was injected (tiles mode), otherwise use full dataset
+    if '_clip_geom' in inParams:
+        mosaic_to_write = eoMz._clip_mosaic_to_regions(inParams, inXrDS) # clip tiles to regions
+    else:
+        mosaic_to_write = inXrDS
 
-  #==========================================================================================================
-  # Create a directory to store the output files
-  #==========================================================================================================
-  dir_path = inParams['out_folder']
-  os.makedirs(dir_path, exist_ok=True)
+    rio_xrDS = mosaic_to_write.rio.write_crs(inParams['projection'], inplace=True)
 
-  #==========================================================================================================
-  # Create prefix filename
-  #==========================================================================================================
-  SsrData    = eoIM.SSR_META_DICT[str(inParams['sensor'])]   
-  region_str = str(inParams['current_region'])
-  period_str = str(inParams['time_str'])
- 
-  filePrefix = f"{SsrData['NAME']}_{region_str}_{period_str}"
+    dir_path = inParams['out_folder']
+    os.makedirs(dir_path, exist_ok=True)
 
-  #==========================================================================================================
-  # Create individual sub-mosaic and combine it into base image based on score
-  #==========================================================================================================
-  spa_scale    = inParams['resolution']
-  export_style = str(inParams['export_style']).lower()
-  
-  if 'sepa' in export_style:
-    for band in rio_xrDS.data_vars:
-      out_img     = (rio_xrDS[band]*VP_scalers[band]).astype(np.uint8)
-      filename    = f"{filePrefix}_{band}_{spa_scale}m.tif"
-      output_path = os.path.join(dir_path, filename)
-      out_img.rio.to_raster(output_path)
-  else:
-    filename = f"{filePrefix}_LEAF_{spa_scale}m.tif"
+    SsrData      = eoIM.SSR_META_DICT[str(inParams['sensor'])]
+    region_label = inParams.get('_region_label', str(inParams.get('current_region', 'region')))
+    tile_label   = inParams.get('_tile_label', '')
+    period_str   = str(inParams['time_str'])
+    spa_scale    = inParams['resolution']
+    export_style = str(inParams['export_style']).lower()
 
-    output_path = os.path.join(dir_path, filename)
-    rio_xrDS.to_netcdf(output_path)
+    if tile_label:
+        filePrefix = f"{SsrData['NAME']}_{region_label}_{tile_label}_{period_str}"
+    else:
+        filePrefix = f"{SsrData['NAME']}_{region_label}_{period_str}"
 
+    if 'sepa' in export_style:
+        for band in rio_xrDS.data_vars:
+            out_img     = (rio_xrDS[band] * VP_scalers.get(band, 1)).astype(np.uint8)
+            filename    = f"{filePrefix}_{band}_{spa_scale}m.tif"
+            output_path = os.path.join(dir_path, filename)
+            out_img.rio.to_raster(output_path)
+            print(f'<_write_VP_geotiffs> Wrote {output_path}')
+    else:
+        filename    = f"{filePrefix}_LEAF_{spa_scale}m.tif"
+        output_path = os.path.join(dir_path, filename)
+        rio_xrDS.to_netcdf(output_path)
+        print(f'<_write_VP_geotiffs> Wrote {output_path}')
 
 
 
@@ -394,22 +411,34 @@ def LEAF_production(ProdParams, CompParams):
 
     # Process all time windows for this region
     for TIndex in range(nTimes):
+      sedParams = eoPM.set_current_time(usedParams, TIndex)
+
+      # ------------------------------------------------------------------
+      # Guard: set_current_time updates Criteria['timeframe'], but only
+      # when get_time_window succeeds.
+      # Double-check here so that a bad timeframe string never reaches
+      # the STAC API.
+      # ------------------------------------------------------------------
       start_check = usedParams['start_dates'][TIndex]
       end_check   = usedParams['end_dates'][TIndex]
 
       if start_check is None or end_check is None:
-        print(f'<LEAF_production> WARNING: None date for {reg_name} at index {TIndex}, skipping.')
-        continue
+          print(
+              f"<MosaicProduction> WARNING: None date for {reg_name} "
+              f"at index {TIndex}, skipping."
+          )
+          continue
 
-      # Explicitly refresh Criteria timeframe (guards against silent set_current_time failures)
-      usedParams = eoPM.set_current_time(usedParams, TIndex)
+      # Explicitly refresh Criteria timeframe in case set_current_time
+      # silently failed to update it (e.g. due to a previous None state).
       if 'Criteria' in usedParams:
-        usedParams['Criteria']['timeframe'] = f'{start_check}/{end_check}'
-        usedParams['Criteria']['region']    = usedParams['regions'][reg_name]
+          usedParams['Criteria']['timeframe'] = f"{start_check}/{end_check}"
+          usedParams['Criteria']['region'] = usedParams['regions'][reg_name]
 
-      print(f'<LEAF_production> Processing {reg_name} | '
-            f'time window: {start_check} / {end_check}')
-
+      print(
+          f"<MosaicProduction> Processing {reg_name} | "
+          f"time window: {start_check} / {end_check}"
+      )
       # Produce and export vegetation biophysical parameter maps
       out_style = str(usedParams['export_style']).lower()
       if 'comp' in out_style:

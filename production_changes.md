@@ -515,3 +515,8 @@ def export_geotiff(inParams, inMosaic):
     ext_saved.append("mosaic")
   
   #return ext_saved, period_str
+
+
+
+# One thing I should tell you before the time I leave is to make sure HLS_SR works properly, because I had to change the code which gets the stac data from earth data, 
+# since the new changes made the old code not work for some reason

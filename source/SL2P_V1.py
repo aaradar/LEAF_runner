@@ -2,7 +2,7 @@ import pickle
 import os
 
 
-VALID_DS_NAMES = ['S2_SR', 'S2_SR_10M', 'L8_SR', 'L9_SR', 'HLS_30M']
+VALID_DS_NAMES = ['S2_SR', 'S2_SR_10M', 'L8_SR', 'L9_SR', 'HLS_SR']
 VALID_VP_NAMES = ['LAI', 'FAPAR', 'FCOVER', 'ALBEDO', 'CCC', 'CWC', 'DASF']
 
 
@@ -54,8 +54,8 @@ def get_DS_description(DSName):
     return 'Landsat-8 L2C'
   elif DSName == VALID_DS_NAMES[3]: #'L9_SR'
     return 'Landsat-9 L2C'
-  elif DSName == VALID_DS_NAMES[4]: #'HLS_30M'
-    return 'HLS 30m'
+  elif DSName == VALID_DS_NAMES[4]: #'HLS_SR'
+    return 'HLS SR'
   else:
     print ('<get_DS_description> The given dataset name <%s> is invalid!'%(DSName))
     return ''
@@ -136,7 +136,7 @@ def get_SL2P_filenames(DSName, NetPath):
     filenames['legend']   = NetPath + '/l9_sl2pccrs_legend.pkl'
     return filenames
   
-  elif ds_name == VALID_DS_NAMES[4]:  #'HLS_30M'
+  elif ds_name == VALID_DS_NAMES[4]:  #'HLS_SR'
     filenames['estimate'] = NetPath + '/l8_sl2pccrs.pkl'
     filenames['error']    = NetPath + '/l8_sl2pccrs_error.pkl'
     filenames['domain']   = NetPath + '/l8_sl2pccrs_domain.pkl'

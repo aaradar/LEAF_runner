@@ -958,6 +958,9 @@ def prepare_production_params(
         print("\n<prepare_production_params> Added properties to regions:")
         print(json.dumps(properties, indent=2, default=str))
     
+    print(ProdParams["region_start_dates"])
+    print(ProdParams["region_end_dates"])
+    
     return {
         'ProdParams': ProdParams,
         'CompParams': CompParams,
