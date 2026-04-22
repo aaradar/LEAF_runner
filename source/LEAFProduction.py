@@ -169,79 +169,148 @@ def SL2P_estimation(Params):
 
 
 
-#############################################################################################################
-# Description: This function exports the vegetation parameter maps into separate GeoTiff files
-#
-# Revision history:  2024-Aug-15  Lixin Sun  Initial creation
-# 
-#############################################################################################################
-def export_VegParamMaps(inParams, inXrDS):
-    print('\n\n<export_VegParamMaps> the data variables in given VP map: ', inXrDS.data_vars)
+# ─────────────────────────────────────────────────────────────────────────────
+# _write_VP_csv 
+# ─────────────────────────────────────────────────────────────────────────────
+def _write_VP_csv(inParams, inXrDS, VP_scalers):
+    import pandas as pd
+    import pyproj
 
-    VP_scalers = {}
-    for s in inXrDS.data_vars:
-        S = s.upper()
-        if 'LAI' in S:
-            VPOptions = SL2P_V1.make_VP_options('lai')
-            VP_scalers[s] = VPOptions['scale_factor']
-        elif 'FAPAR' in S or 'FCOVER' in S or 'ALBEDO' in S:
-            VPOptions = SL2P_V1.make_VP_options('FAPAR')
-            VP_scalers[s] = VPOptions['scale_factor']
-        else:
-            VP_scalers[s] = 1
+    # ── Build the path of the mosaic CSV that export_csv() already wrote ──
+    SsrData      = eoIM.SSR_META_DICT[str(inParams['sensor'])]
+    region_label = inParams.get('_region_label', str(inParams.get('current_region', 'region')))
+    tile_label   = inParams.get('_tile_label', '')
+    period_str   = str(inParams.get('time_str', 'period'))
+    spa_scale    = inParams.get('csv_scale', inParams.get('resolution', 30))
 
-    mode = str(inParams.get('mode', 'regions')).lower()
-
-    if mode == 'tiles':
-        # Get the regions that intersect this tile and match the current time window
-        tile_regions = eoMz._get_tile_regions(inParams, inXrDS)
-
-        if not tile_regions:
-            print('<export_VegParamMaps> tiles mode: no matching regions for this tile/time window — skipping.')
-            return
-
-        tile_label = str(inParams.get('current_region', ''))
-
-        for reg_name, proj_geom in tile_regions.items():
-            print(f'\n<export_VegParamMaps> tiles mode — clipping to region: {reg_name} (tile: {tile_label})')
-            region_params = {
-                **inParams,
-                '_clip_geom':    proj_geom,
-                '_region_label': reg_name,
-                '_tile_label':   tile_label,
-            }
-            _write_VP_geotiffs(region_params, inXrDS, VP_scalers)
+    if tile_label:
+        filename = f"{SsrData['NAME']}_{region_label}_{tile_label}_{period_str}_{spa_scale}m.csv"
     else:
-        _write_VP_geotiffs(inParams, inXrDS, VP_scalers)
+        filename = f"{SsrData['NAME']}_{region_label}_{period_str}_{spa_scale}m.csv"
 
-##############################################################################################################
-# Description: This function writes per-band GeoTIFFs for one region (after clipping if needed).
-##############################################################################################################
+    csv_path = os.path.join(inParams['out_folder'], filename)
+
+    if not os.path.exists(csv_path):
+        print(f'<_write_VP_csv> WARNING: mosaic CSV not found at {csv_path}. '
+              f'Run export_csv() first. Writing standalone VP CSV as fallback.')
+        # ── Fallback: write a VP-only CSV with a distinct suffix ──────────
+        if '_clip_geom' in inParams:
+            mosaic_to_sample = eoMz._clip_mosaic_to_regions(inParams, inXrDS)
+        else:
+            mosaic_to_sample = inXrDS
+        skip_bands  = {'spatial_ref'}
+        band_names  = [v for v in mosaic_to_sample.data_vars if v not in skip_bands]
+        stacked     = mosaic_to_sample[band_names].stack(pixel=('y', 'x'))
+        pixel_index = stacked.coords['pixel'].values
+        df          = pd.DataFrame({b: stacked[b].values for b in band_names})
+        if inParams.get('csv_dropNulls', True):
+            mask        = df.notna().all(axis=1)
+            df          = df[mask].reset_index(drop=True)
+            pixel_index = pixel_index[mask.values if hasattr(mask, 'values') else mask]
+        proj_str    = inParams.get('projection', 'EPSG:3979')
+        transformer = pyproj.Transformer.from_crs(pyproj.CRS.from_string(proj_str),
+                                                   pyproj.CRS.from_epsg(4326), always_xy=True)
+        ys, xs      = np.array([p[0] for p in pixel_index]), np.array([p[1] for p in pixel_index])
+        lons, lats  = transformer.transform(xs, ys)
+        df.insert(0, 'latitude', lats)
+        df.insert(0, 'longitude', lons)
+        for b in band_names:
+            if b in df.columns:
+                df[b] = df[b] * VP_scalers.get(b, 1)
+        fallback_path = csv_path.replace('.csv', '_VP_only.csv')
+        os.makedirs(inParams['out_folder'], exist_ok=True)
+        df.to_csv(fallback_path, index=False)
+        print(f'<_write_VP_csv> Standalone VP CSV → {fallback_path}')
+        return
+
+    # ── Load the existing mosaic CSV ──────────────────────────────────────
+    mosaic_df = pd.read_csv(csv_path)
+    print(f'<_write_VP_csv> Loaded mosaic CSV ({len(mosaic_df):,} rows) from {csv_path}')
+
+    # ── Clip, stack, and build a VP DataFrame ────────────────────────────
+    if '_clip_geom' in inParams:
+        vp_clipped = eoMz._clip_mosaic_to_regions(inParams, inXrDS)
+    else:
+        vp_clipped = inXrDS
+
+    skip_bands    = {'spatial_ref'}
+    vp_band_names = [v for v in vp_clipped.data_vars if v not in skip_bands]
+    stacked       = vp_clipped[vp_band_names].stack(pixel=('y', 'x'))
+    pixel_index   = stacked.coords['pixel'].values
+    vp_df         = pd.DataFrame({b: stacked[b].values for b in vp_band_names})
+
+    valid_mask  = vp_df.notna().any(axis=1)
+    vp_df       = vp_df[valid_mask].reset_index(drop=True)
+    pixel_index = pixel_index[valid_mask.values if hasattr(valid_mask, 'values') else valid_mask]
+    print(f'<_write_VP_csv> VP pixels after null filter: {len(vp_df):,}')
+
+    proj_str    = inParams.get('projection', 'EPSG:3979')
+    transformer = pyproj.Transformer.from_crs(pyproj.CRS.from_string(proj_str),
+                                               pyproj.CRS.from_epsg(4326), always_xy=True)
+    ys, xs      = np.array([p[0] for p in pixel_index]), np.array([p[1] for p in pixel_index])
+    lons, lats  = transformer.transform(xs, ys)
+    vp_df.insert(0, 'latitude',  lats)
+    vp_df.insert(0, 'longitude', lons)
+
+    for b in vp_band_names:
+        if b in vp_df.columns:
+            vp_df[b] = vp_df[b] * VP_scalers.get(b, 1)
+
+    # ── Left-join VP columns onto the mosaic rows via rounded lat/lon key ─
+    DECIMALS = 6
+    mosaic_df['_lat_key'] = mosaic_df['latitude'].round(DECIMALS)
+    mosaic_df['_lon_key'] = mosaic_df['longitude'].round(DECIMALS)
+    vp_df['_lat_key']     = vp_df['latitude'].round(DECIMALS)
+    vp_df['_lon_key']     = vp_df['longitude'].round(DECIMALS)
+
+    combined_df = mosaic_df.merge(
+        vp_df[['_lat_key', '_lon_key'] + vp_band_names],
+        on  = ['_lat_key', '_lon_key'],
+        how = 'left',
+    ).drop(columns=['_lat_key', '_lon_key'])
+
+        # Use the first VP band that actually landed in combined_df as the match counter
+    _check_band = next((b for b in vp_band_names if b in combined_df.columns), None)
+    if _check_band:
+        matched = combined_df[_check_band].notna().sum()
+        print(f'<_write_VP_csv> {matched:,} / {len(combined_df):,} rows matched VP values (checked via {_check_band!r}).')
+    else:
+        print('<_write_VP_csv> WARNING: no VP bands found in combined_df after merge.')
+
+    # ── Overwrite the CSV in-place with the combined result ───────────────
+    combined_df.to_csv(csv_path, index=False)
+    print(f'<_write_VP_csv> Updated CSV → {csv_path}  '
+          f'({len(combined_df):,} rows, {len(combined_df.columns)} columns)')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _write_VP_geotiffs  — unchanged from original, included for completeness
+# ─────────────────────────────────────────────────────────────────────────────
 def _write_VP_geotiffs(inParams, inXrDS, VP_scalers):
     """Write per-band GeoTIFFs for one region (after clipping if needed)."""
     # Clip if a geometry was injected (tiles mode), otherwise use full dataset
     if '_clip_geom' in inParams:
-        mosaic_to_write = eoMz._clip_mosaic_to_regions(inParams, inXrDS) # clip tiles to regions
+        mosaic_to_write = eoMz._clip_mosaic_to_regions(inParams, inXrDS)
     else:
         mosaic_to_write = inXrDS
-
+ 
     rio_xrDS = mosaic_to_write.rio.write_crs(inParams['projection'], inplace=True)
-
+ 
     dir_path = inParams['out_folder']
     os.makedirs(dir_path, exist_ok=True)
-
+ 
     SsrData      = eoIM.SSR_META_DICT[str(inParams['sensor'])]
     region_label = inParams.get('_region_label', str(inParams.get('current_region', 'region')))
     tile_label   = inParams.get('_tile_label', '')
     period_str   = str(inParams['time_str'])
     spa_scale    = inParams['resolution']
     export_style = str(inParams['export_style']).lower()
-
+ 
     if tile_label:
         filePrefix = f"{SsrData['NAME']}_{region_label}_{tile_label}_{period_str}"
     else:
         filePrefix = f"{SsrData['NAME']}_{region_label}_{period_str}"
-
+ 
     if 'sepa' in export_style:
         for band in rio_xrDS.data_vars:
             out_img     = (rio_xrDS[band] * VP_scalers.get(band, 1)).astype(np.uint8)
@@ -254,67 +323,93 @@ def _write_VP_geotiffs(inParams, inXrDS, VP_scalers):
         output_path = os.path.join(dir_path, filename)
         rio_xrDS.to_netcdf(output_path)
         print(f'<_write_VP_geotiffs> Wrote {output_path}')
-
-
-
-#############################################################################################################
-# Description: This function can be used to produce monthly vegetation parameter maps for one or multiple 
-#              tiles within Canada.
-# 
-# Revision history:  2024-Aug-01  Lixin Sun  Initial creation 
-#
-#############################################################################################################
-def tile_LEAF_production(Params):
-  '''Produces monthly vegetation parameter maps for one or multiple tiles within Canada.
-
-    Args:
-       Params(dictionary): A dictionary containing all necessary execution parameters.'''  
-  
-  #==========================================================================================================
-  # Validate some input parameters
-  #==========================================================================================================
-  all_keys  = Params.keys()
-  all_valid = True if 'tile_names' in all_keys and 'months' in all_keys and 'year' in all_keys else False
-  
-  if all_valid == False:
-    print('<tile_LEAF_production> !!!!!!!! Required parameters are not available !!!!!!!!')
-    return 
-
-  #==========================================================================================================
-  # Produce vegetation parameter maps for eath tile and each month
-  #==========================================================================================================
-  # Loop for each tile
-  for tile in Params['tile_names']:    
-    Params['current_tile'] = tile   
-    Params['region_str']   = tile   # Update region string
-
-    # Produce monthly (or seasonal) porducts 
-    for month in Params['months']:
-      # Add an element with 'month' as key to 'exe_param_dict'  
-      Params['current_month'] = month
-      Params['time_str']      = eoIM.get_MonthName(int(month))
-
-      # Produce monthly/seasonal vegetation parameter maps and export them in a specified way
-      # (a compact image or separate images)      
-      out_style = str(Params['export_style']).lower()
-      if out_style.find('comp') > -1:
-        print('\n<tile_LEAF_production> Generate and export biophysical maps in one file .......')
-        #out_params = compact_params(mosaic, SsrData, ClassImg)
-
-        # Export the 64-bits image to either GD or GCS
-        #export_compact_params(fun_Param_dict, region, out_params, task_list)
-
-      else: 
-        # Produce and export monthly/seasonal vegetation biophysical parameetr (VBP) maps
-        print('\n<tile_LEAF_production> Generate and export separate vegetation biophysical maps......')        
-        VBP_maps = create_LEAF_maps(Params)
-      
-        # Export results for ONE tile and ONE month/season        
-        export_VegParamMaps(Params, VBP_maps)
-
-
-
-
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# export_VegParamMaps  — updated orchestrator
+# ─────────────────────────────────────────────────────────────────────────────
+def export_VegParamMaps(inParams, inXrDS):
+    """
+    Export vegetation-parameter maps as GeoTIFFs or a CSV file.
+ 
+    Reads inParams['output_type'] ('geotiff' by default, or 'csv') and
+    dispatches to the appropriate writer.  Both 'regions' mode and 'tiles'
+    mode are supported, matching the behaviour of eoMosaic.export_mosaic().
+ 
+    tiles mode
+    ----------
+    Calls eoMosaic._get_tile_regions() to find all regions that intersect
+    the current tile and match the current time window, then calls the writer
+    once per region with '_clip_geom', '_region_label', and '_tile_label'
+    injected into a shallow copy of inParams.  If no matching regions are
+    found the export is skipped entirely.
+ 
+    regions mode  (default)
+    -----------------------
+    Calls the writer once with inParams unchanged; clipping is handled
+    inside the writer via eoMosaic._clip_mosaic_to_regions().
+ 
+    Parameters
+    ----------
+    inParams : dict
+        Parameter dictionary.  Relevant keys: 'output_type', 'mode',
+        'current_region', 'sensor', 'projection', 'out_folder', 'time_str',
+        'resolution', 'export_style', plus all keys required by the chosen
+        writer.
+    inXrDS : xarray.Dataset
+        Vegetation-parameter dataset produced by create_LEAF_maps().
+    """
+    print('\n\n<export_VegParamMaps> data variables in given VP map:', inXrDS.data_vars)
+ 
+    # ── Build VP scale-factor dict (same logic as before) ─────────────────
+    VP_scalers = {}
+    for s in inXrDS.data_vars:
+        S = s.upper()
+        if 'LAI' in S:
+            VPOptions = SL2P_V1.make_VP_options('lai')
+            VP_scalers[s] = VPOptions['scale_factor']
+        elif 'FAPAR' in S or 'FCOVER' in S or 'ALBEDO' in S:
+            VPOptions = SL2P_V1.make_VP_options('FAPAR')
+            VP_scalers[s] = VPOptions['scale_factor']
+        else:
+            VP_scalers[s] = 1
+ 
+    # ── Choose writer based on output_type ────────────────────────────────
+    output_type = str(inParams.get('output_type', 'geotiff')).lower()
+    writer      = _write_VP_csv if output_type == 'csv' else _write_VP_geotiffs
+ 
+    # ── Dispatch: tiles vs regions mode ───────────────────────────────────
+    mode = str(inParams.get('mode', 'regions')).lower()
+ 
+    if mode == 'tiles':
+        # Find regions that spatially and temporally match this tile
+        tile_regions = eoMz._get_tile_regions(inParams, inXrDS)
+ 
+        if not tile_regions:
+            print(
+                '<export_VegParamMaps> tiles mode: no matching regions for '
+                'this tile/time window — skipping.'
+            )
+            return
+ 
+        tile_label = str(inParams.get('current_region', ''))
+ 
+        for reg_name, proj_geom in tile_regions.items():
+            print(
+                f'\n<export_VegParamMaps> tiles mode — '
+                f'exporting region: {reg_name} (tile: {tile_label})'
+            )
+            region_params = {
+                **inParams,
+                '_clip_geom':    proj_geom,
+                '_region_label': reg_name,
+                '_tile_label':   tile_label,
+            }
+            writer(region_params, inXrDS, VP_scalers)
+ 
+    else:  # 'regions' mode (default)
+        writer(inParams, inXrDS, VP_scalers)
+ 
 
 
 #############################################################################################################
