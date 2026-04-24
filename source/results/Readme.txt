@@ -2,6 +2,8 @@ image compositing code (s2 gits)
 sl2p repos by djamainajib i assume you already know about / worked in
 s2gvm gits:
 
+remote desktop: W-bsc-a159391
+
 https://github.com/ollinevalainen/satellitetools
 https://github.com/DPIRD-DMA/S2Mosaic
 https://github.com/senbox-org/sen2like
